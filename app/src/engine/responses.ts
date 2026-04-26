@@ -153,7 +153,7 @@ function generateQueries(task: string, n: number): string[] {
   return queries
 }
 
-function syntheticSnippet(q: string): string {
+function syntheticSnippet(_q: string): string {
   const snippets = [
     'a recent industry report places the figure at 21.8% with a 2pp confidence band.',
     'authors find that emergent topologies dominate static baselines on 7 of 9 benchmarks.',

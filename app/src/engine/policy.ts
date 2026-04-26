@@ -1,4 +1,5 @@
-import { AGENTS, AGENT_BY_ID, AgentSpec } from './agents'
+import { AGENTS, AGENT_BY_ID } from './agents'
+import type { AgentSpec } from './agents'
 import type { CandidateScore, Invocation, TaskFeatures } from './types'
 
 // ---------------------------------------------------------------------------
