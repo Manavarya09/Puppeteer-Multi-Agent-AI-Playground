@@ -1,0 +1,442 @@
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Mono:wght@400;500&display=swap');
+  *{box-sizing:border-box;margin:0;padding:0}
+  :root{
+    --brand:#1a1a2e;--accent:#7c5cbf;--accent2:#3eb489;--warn:#e8593c;
+    --card:var(--color-background-primary);--surf:var(--color-background-secondary);
+    --border:var(--color-border-tertiary);--tx:var(--color-text-primary);--tx2:var(--color-text-secondary);
+  }
+  body{font-family:var(--font-sans);color:var(--tx);background:transparent;padding:0 0 2rem}
+
+  .hero{padding:2rem 0 1.5rem;border-bottom:0.5px solid var(--border);margin-bottom:2rem}
+  .hero-tag{display:inline-block;font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);
+    padding:3px 10px;border-radius:20px;margin-bottom:.75rem}
+  .hero h1{font-family:'DM Serif Display',serif;font-size:28px;font-weight:400;line-height:1.2;margin-bottom:.5rem}
+  .hero p{font-size:14px;color:var(--tx2);max-width:540px;line-height:1.6}
+  .meta{display:flex;gap:1.5rem;margin-top:1rem;font-size:12px;color:var(--tx2)}
+  .meta span{display:flex;align-items:center;gap:4px}
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--accent2)}
+
+  .nav{display:flex;gap:4px;margin-bottom:2rem;flex-wrap:wrap}
+  .nav-btn{font-size:12px;padding:5px 12px;border-radius:20px;border:0.5px solid var(--border);
+    background:transparent;color:var(--tx2);cursor:pointer;transition:all .15s}
+  .nav-btn:hover{background:var(--surf);color:var(--tx)}
+  .nav-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+
+  .section{display:none}.section.active{display:block}
+
+  h2{font-size:18px;font-weight:500;margin-bottom:1.25rem;color:var(--tx)}
+  h3{font-size:14px;font-weight:500;margin-bottom:.6rem;color:var(--tx)}
+  p,li{font-size:14px;line-height:1.7;color:var(--tx2)}
+
+  .card{background:var(--card);border:0.5px solid var(--border);border-radius:12px;padding:1.25rem;margin-bottom:1rem}
+  .card-title{font-size:13px;font-weight:500;color:var(--tx);margin-bottom:.4rem;display:flex;align-items:center;gap:8px}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500}
+  .tag-p{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)}
+  .tag-g{background:color-mix(in srgb,var(--accent2) 15%,transparent);color:color-mix(in srgb,var(--accent2) 80%,#000)}
+  .tag-w{background:color-mix(in srgb,var(--warn) 15%,transparent);color:var(--warn)}
+  .tag-b{background:color-mix(in srgb,#378ADD 15%,transparent);color:#185FA5}
+
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:1rem;margin-bottom:1rem}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem;margin-bottom:1rem}
+  @media(max-width:500px){.grid2,.grid3{grid-template-columns:1fr}}
+
+  .stat{background:var(--surf);border-radius:8px;padding:1rem;text-align:center}
+  .stat-n{font-size:26px;font-weight:500;color:var(--tx);display:block}
+  .stat-l{font-size:12px;color:var(--tx2);margin-top:2px;display:block}
+
+  .flow{display:flex;flex-direction:column;gap:0}
+  .flow-step{display:flex;gap:1rem;padding:.75rem 0}
+  .flow-step:not(:last-child){border-bottom:0.5px solid var(--border)}
+  .step-num{width:28px;height:28px;border-radius:50%;background:var(--accent);color:#fff;
+    font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+  .step-body h3{margin-bottom:3px}
+
+  .agent-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.75rem;margin-bottom:1rem}
+  .agent-card{background:var(--surf);border-radius:10px;padding:.9rem;border:0.5px solid var(--border)}
+  .agent-icon{font-size:14px;margin-bottom:.4rem}
+  .agent-name{font-size:13px;font-weight:500;color:var(--tx);margin-bottom:2px}
+  .agent-desc{font-size:11px;color:var(--tx2);line-height:1.5}
+
+  .road{display:grid;grid-template-columns:repeat(3,1fr);gap:1rem}
+  @media(max-width:520px){.road{grid-template-columns:1fr}}
+  .road-col h3{font-size:13px;font-weight:500;color:var(--tx2);letter-spacing:.04em;text-transform:uppercase;font-size:11px;margin-bottom:.75rem}
+  .road-item{font-size:13px;color:var(--tx2);padding:.5rem .75rem;background:var(--surf);border-radius:8px;margin-bottom:.5rem;
+    border-left:2.5px solid transparent;line-height:1.5}
+  .ri-p{border-left-color:var(--accent)}
+  .ri-g{border-left-color:var(--accent2)}
+  .ri-b{border-left-color:#378ADD}
+
+  .persona{display:flex;gap:1rem;align-items:flex-start}
+  .avatar{width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:500;flex-shrink:0}
+  .av1{background:color-mix(in srgb,var(--accent) 15%,transparent);color:var(--accent)}
+  .av2{background:color-mix(in srgb,var(--accent2) 15%,transparent);color:color-mix(in srgb,var(--accent2) 70%,#000)}
+  .av3{background:color-mix(in srgb,#378ADD 15%,transparent);color:#185FA5}
+  .persona-body h3{font-size:14px;font-weight:500;color:var(--tx);margin-bottom:2px}
+  .persona-body p{font-size:13px;color:var(--tx2)}
+  .quote{font-size:13px;font-style:italic;color:var(--tx2);border-left:2px solid var(--border);padding-left:.75rem;margin-top:.5rem;line-height:1.6}
+
+  .arch-box{background:var(--surf);border:0.5px solid var(--border);border-radius:10px;padding:1rem;text-align:center;font-size:13px;color:var(--tx2)}
+  .arch-arrow{text-align:center;color:var(--tx2);font-size:18px;margin:2px 0;line-height:1}
+  .arch-label{font-size:11px;color:var(--tx2);margin-top:4px}
+
+  .risk-row{display:flex;align-items:center;gap:.75rem;padding:.6rem 0;border-bottom:0.5px solid var(--border);font-size:13px}
+  .risk-row:last-child{border-bottom:none}
+  .sev{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .sev-h{background:var(--warn)}.sev-m{background:#EF9F27}.sev-l{background:var(--accent2)}
+  .risk-name{font-weight:500;color:var(--tx);min-width:140px}
+  .risk-mit{color:var(--tx2);flex:1}
+
+  .success-metric{display:flex;justify-content:space-between;align-items:center;padding:.6rem 0;border-bottom:0.5px solid var(--border);font-size:13px}
+  .success-metric:last-child{border-bottom:none}
+  .sm-name{color:var(--tx2)}
+  .sm-val{font-weight:500;color:var(--tx);font-family:'DM Mono',monospace;font-size:12px}
+</style>
+
+<div class="hero">
+  <div class="hero-tag">Product Spec v1.0</div>
+  <h1>Puppeteer — Multi-Agent AI Playground</h1>
+  <p>A web platform where developers, researchers, and business users orchestrate intelligent AI agent teams to solve complex tasks — powered by dynamic RL-driven orchestration from the Puppeteer paradigm.</p>
+  <div class="meta">
+    <span><div class="dot"></div> Research → Product</span>
+    <span><div class="dot"></div> MVP: 8 weeks</span>
+    <span><div class="dot"></div> All user segments</span>
+  </div>
+</div>
+
+<div class="nav">
+  <button class="nav-btn active" onclick="show('overview')">Overview</button>
+  <button class="nav-btn" onclick="show('users')">Users</button>
+  <button class="nav-btn" onclick="show('features')">Features</button>
+  <button class="nav-btn" onclick="show('architecture')">Architecture</button>
+  <button class="nav-btn" onclick="show('agents')">Agent Library</button>
+  <button class="nav-btn" onclick="show('roadmap')">Roadmap</button>
+  <button class="nav-btn" onclick="show('risks')">Risks</button>
+  <button class="nav-btn" onclick="show('metrics')">Success Metrics</button>
+</div>
+
+<!-- OVERVIEW -->
+<div id="overview" class="section active">
+  <h2>Product Overview</h2>
+  <div class="grid3">
+    <div class="stat"><span class="stat-n">~70%</span><span class="stat-l">accuracy gain on GSM-Hard vs base LLM</span></div>
+    <div class="stat"><span class="stat-n">↓ tokens</span><span class="stat-l">RL-learned early termination cuts compute cost</span></div>
+    <div class="stat"><span class="stat-n">3 modes</span><span class="stat-l">Playground · API · Visual Monitor</span></div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">The core idea</div>
+    <p>Most AI tools give you one model doing one thing. Puppeteer gives you a <strong>team of specialist agents</strong> — a Planner, a Coder, a Critic, a Web Searcher — coordinated by a central AI orchestrator that learns over time which agents to call, in what order, and when to stop. The result is dramatically better answers at lower cost.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">What makes it different <span class="tag tag-p">Differentiation</span></div>
+    <p style="margin-bottom:.75rem">Unlike AutoGPT, CrewAI, or LangGraph — which use static, human-designed agent pipelines — Puppeteer's orchestrator <strong>learns its own coordination strategy</strong> via reinforcement learning. The topology of agent interactions evolves: simpler at first, then converging into dense, cyclic graphs as it discovers which agents work best together for each task type.</p>
+    <p>This means no manual pipeline engineering. The system discovers optimal team structures on its own.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Three user experiences</div>
+    <div class="grid3" style="margin-top:.75rem">
+      <div class="arch-box"><strong>Playground</strong><div class="arch-label">Natural language task input → watch agents collaborate live</div></div>
+      <div class="arch-box"><strong>API Access</strong><div class="arch-label">Developers integrate Puppeteer into their apps via REST API</div></div>
+      <div class="arch-box"><strong>Orchestration Monitor</strong><div class="arch-label">Live graph visualization of agent interactions and topology evolution</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- USERS -->
+<div id="users" class="section">
+  <h2>Target Users</h2>
+
+  <div class="card">
+    <div class="persona">
+      <div class="avatar av1">DA</div>
+      <div class="persona-body">
+        <h3>Developer / AI Engineer</h3>
+        <p>Builds products on top of LLMs. Wants a smarter reasoning backbone they can call via API without managing agent pipelines themselves.</p>
+        <div class="quote">"I want GPT-4-level reasoning on hard tasks but I can't afford 10 sequential API calls per query. Can Puppeteer optimize that for me?"</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="persona">
+      <div class="avatar av2">RS</div>
+      <div class="persona-body">
+        <h3>Researcher / Academic</h3>
+        <p>Studies multi-agent systems, LLM reasoning, or emergent AI behavior. Wants to reproduce the Puppeteer paper's results, run ablations, and visualize topology evolution.</p>
+        <div class="quote">"I want to see the cyclic graph structures from Figure 4 of the paper actually form in real time, and export the interaction logs for my own analysis."</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="persona">
+      <div class="avatar av3">BM</div>
+      <div class="persona-body">
+        <h3>Business / Power User</h3>
+        <p>Uses AI for deep research, report writing, complex analysis. Doesn't want to understand the internals — they just want better results than ChatGPT on hard tasks.</p>
+        <div class="quote">"I gave it a 40-page RFP and asked it to write a proposal. It used a web agent, a planner, a writer, and a critic — and the output was actually good."</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">User segmentation by feature access</div>
+    <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:.5rem">
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:.5rem;background:var(--surf);border-radius:8px">
+        <span style="color:var(--tx2)">Free tier</span><span style="color:var(--tx)">5 tasks/day · Public agents · Basic monitoring</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:.5rem;background:var(--surf);border-radius:8px">
+        <span style="color:var(--tx2)">Pro ($29/mo)</span><span style="color:var(--tx)">Unlimited tasks · All agents · Full graph viz · API access</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:.5rem;background:var(--surf);border-radius:8px">
+        <span style="color:var(--tx2)">Teams ($99/mo)</span><span style="color:var(--tx)">Custom agents · Saved pipelines · Priority compute · SSO</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;padding:.5rem;background:var(--surf);border-radius:8px">
+        <span style="color:var(--tx2)">Research (free)</span><span style="color:var(--tx)">Researchers get Pro free · Exportable interaction logs · Paper citation</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- FEATURES -->
+<div id="features" class="section">
+  <h2>Core Features</h2>
+
+  <div class="card">
+    <div class="card-title"><span class="tag tag-p">P0 — MVP</span> Task Playground</div>
+    <p>A clean, single-screen interface where users type a task in natural language. The system automatically selects agents, shows their outputs streaming in real time (like a group chat), and delivers a final synthesized answer. Users can see token usage, agent sequence, and overall confidence.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="tag tag-p">P0 — MVP</span> Live Orchestration Graph</div>
+    <p>A real-time animated graph showing which agents were activated, in what order, and how they connected. Nodes pulse when active. Edge thickness represents interaction frequency. Users can toggle between "compact cyclic" (evolved) and "simple chain" (initial) views to understand how the system optimizes itself.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="tag tag-p">P0 — MVP</span> Agent Transparency Panel</div>
+    <p>Each agent's full reasoning trace is visible. Users can expand any agent's output to see its raw prompt, the response it generated, and what the orchestrator decided to do next. This builds trust and is essential for researchers and power users.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="tag tag-g">P1</span> REST API + SDK</div>
+    <p>Developers call <code style="font-size:12px;background:var(--surf);padding:2px 6px;border-radius:4px">POST /v1/run</code> with a task description and optional agent constraints. Response streams token-by-token with SSE. Includes a Python SDK and Node.js SDK with one-line setup. Rate limits and usage metered per API key.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="tag tag-g">P1</span> Custom Agent Builder</div>
+    <p>Teams users can define their own agents with a system prompt, tool set, and reasoning pattern. Custom agents are treated identically to built-in ones by the orchestrator. This enables domain-specific specialization — e.g. a "Legal Document Reviewer" agent or a "SQL Query Optimizer" agent.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="tag tag-b">P2</span> Topology Evolution Replay</div>
+    <p>For researchers: a scrubable timeline showing how agent interaction patterns evolved over multiple task episodes. Visualizes the transition from disjoint chains → trees → dense cyclic graphs. Exportable as JSON interaction logs for offline analysis.</p>
+  </div>
+
+  <div class="card">
+    <div class="card-title"><span class="tag tag-b">P2</span> Benchmarking Mode</div>
+    <p>Users submit a task and ground truth answer. The platform runs the task through: (a) base LLM alone, (b) static multi-agent baseline, and (c) Puppeteer evolved. Returns accuracy, token usage, and cost comparison across all three. Designed for researchers and developers evaluating the approach.</p>
+  </div>
+</div>
+
+<!-- ARCHITECTURE -->
+<div id="architecture" class="section">
+  <h2>System Architecture</h2>
+
+  <div class="card">
+    <div class="card-title">High-level stack</div>
+    <div style="margin-top:.75rem;display:flex;flex-direction:column;gap:4px">
+      <div class="arch-box" style="border:0.5px solid var(--accent);color:var(--tx)"><strong>Frontend</strong> — React + TypeScript · Real-time graph (Cytoscape.js) · Streaming UI</div>
+      <div class="arch-arrow">↕</div>
+      <div class="arch-box"><strong>API Gateway</strong> — FastAPI · Auth (JWT + API keys) · Rate limiting · SSE streaming</div>
+      <div class="arch-arrow">↕</div>
+      <div class="arch-box"><strong>Orchestration Engine</strong> — Puppeteer policy model · Agent registry · State manager · RL reward tracker</div>
+      <div class="arch-arrow">↕</div>
+      <div class="arch-box"><strong>Agent Pool</strong> — Containerized agents (Docker) · Tool sandboxes · LLM calls (OpenAI / Anthropic / local)</div>
+      <div class="arch-arrow">↕</div>
+      <div class="arch-box"><strong>Data Layer</strong> — PostgreSQL (tasks, users, logs) · Redis (session state) · S3 (interaction exports)</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Request flow</div>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div class="step-body"><h3>User submits task</h3><p>Frontend sends task string + optional constraints to <code style="font-size:12px">POST /v1/run</code>. Server assigns task ID and opens SSE stream.</p></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div class="step-body"><h3>Orchestrator initializes state</h3><p>Puppeteer policy loads task embedding, prior episode statistics, and agent registry. Picks first agent based on task type classification.</p></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div class="step-body"><h3>Agent execution loop</h3><p>Selected agent runs, appends to shared state S_t. Orchestrator evaluates state and selects next agent (or Terminator). Repeats until termination.</p></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">4</div>
+        <div class="step-body"><h3>Aggregation + streaming</h3><p>ConcluderAgent synthesizes final answer. F_agg combines outputs. Each agent output streams to frontend via SSE as it's produced.</p></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">5</div>
+        <div class="step-body"><h3>Reward logging</h3><p>Task outcome (if ground truth available) + token cost logged. RL policy updated asynchronously via REINFORCE to improve future orchestration.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="card-title">Model backends</div>
+      <p style="font-size:13px;margin-bottom:.5rem">Titan subspace (high accuracy): GPT-4o, Claude Opus</p>
+      <p style="font-size:13px;margin-bottom:.5rem">Mimas subspace (cost efficient): Llama-3-8B, Claude Haiku</p>
+      <p style="font-size:13px">Users choose subspace per task — trading accuracy for cost.</p>
+    </div>
+    <div class="card">
+      <div class="card-title">Agent isolation</div>
+      <p style="font-size:13px">Each agent runs in a sandboxed container. Tool-use agents (Python, Browser) have network + filesystem limits. No cross-agent memory leakage by design.</p>
+    </div>
+  </div>
+</div>
+
+<!-- AGENTS -->
+<div id="agents" class="section">
+  <h2>Built-in Agent Library</h2>
+  <p style="margin-bottom:1.25rem">The orchestrator selects from these agents dynamically. Each is independently versioned and can be upgraded without touching the orchestrator policy.</p>
+
+  <h3 style="margin-bottom:.75rem;color:var(--tx2);font-size:11px;text-transform:uppercase;letter-spacing:.06em">Tool-use agents</h3>
+  <div class="agent-grid">
+    <div class="agent-card"><div class="agent-icon">🔍</div><div class="agent-name">BingAgent</div><div class="agent-desc">Web search for real-time information retrieval</div></div>
+    <div class="agent-card"><div class="agent-icon">📄</div><div class="agent-name">ArxivAgent</div><div class="agent-desc">Academic paper search and summarization</div></div>
+    <div class="agent-card"><div class="agent-icon">🐍</div><div class="agent-name">PythonAgent</div><div class="agent-desc">Code execution, data analysis, calculations</div></div>
+    <div class="agent-card"><div class="agent-icon">🌐</div><div class="agent-name">BrowserAgent</div><div class="agent-desc">Full webpage reading and interaction</div></div>
+    <div class="agent-card"><div class="agent-icon">📊</div><div class="agent-name">DataAgent</div><div class="agent-desc">CSV, JSON, SQL data parsing and transformation</div></div>
+  </div>
+
+  <h3 style="margin-bottom:.75rem;color:var(--tx2);font-size:11px;text-transform:uppercase;letter-spacing:.06em">Reasoning agents</h3>
+  <div class="agent-grid">
+    <div class="agent-card"><div class="agent-icon">🗺</div><div class="agent-name">PlannerAgent</div><div class="agent-desc">Task decomposition and step-by-step structuring</div></div>
+    <div class="agent-card"><div class="agent-icon">🔎</div><div class="agent-name">CriticAgent</div><div class="agent-desc">Identifies flaws and provides targeted feedback</div></div>
+    <div class="agent-card"><div class="agent-icon">🔄</div><div class="agent-name">ReflectAgent</div><div class="agent-desc">Analyzes overall trajectory for improvements</div></div>
+    <div class="agent-card"><div class="agent-icon">✏️</div><div class="agent-name">ModifierAgent</div><div class="agent-desc">Error correction and output revision</div></div>
+    <div class="agent-card"><div class="agent-icon">✅</div><div class="agent-name">ConcluderAgent</div><div class="agent-desc">Synthesizes final answers from collective outputs</div></div>
+    <div class="agent-card"><div class="agent-icon">⛔</div><div class="agent-name">Terminator</div><div class="agent-desc">Signals solution reached — stops the reasoning chain</div></div>
+  </div>
+
+  <div class="card" style="margin-top:.5rem">
+    <div class="card-title">Custom Agent API (Teams)</div>
+    <p style="font-size:13px">Teams users define agents via a simple JSON schema: name, system_prompt, tools[], reasoning_pattern, cost_weight. The orchestrator automatically incorporates custom agents into its selection policy after 5+ invocations of training data.</p>
+  </div>
+</div>
+
+<!-- ROADMAP -->
+<div id="roadmap" class="section">
+  <h2>Roadmap</h2>
+
+  <div class="road">
+    <div class="road-col">
+      <h3>Phase 1 — MVP (weeks 1–8)</h3>
+      <div class="road-item ri-p">Core playground UI</div>
+      <div class="road-item ri-p">5 built-in agents (Planner, Critic, Python, Web, Concluder)</div>
+      <div class="road-item ri-p">Live orchestration graph</div>
+      <div class="road-item ri-p">Agent transparency panel</div>
+      <div class="road-item ri-p">Free + Pro tiers</div>
+      <div class="road-item ri-p">Basic RL orchestrator (pre-trained weights)</div>
+      <div class="road-item ri-p">Auth + billing (Stripe)</div>
+    </div>
+    <div class="road-col">
+      <h3>Phase 2 — Growth (weeks 9–20)</h3>
+      <div class="road-item ri-g">REST API + Python SDK</div>
+      <div class="road-item ri-g">Full 11-agent library</div>
+      <div class="road-item ri-g">Custom agent builder (Teams)</div>
+      <div class="road-item ri-g">Topology evolution replay</div>
+      <div class="road-item ri-g">Benchmarking mode</div>
+      <div class="road-item ri-g">Research tier + log export</div>
+      <div class="road-item ri-g">Continuous RL training pipeline</div>
+    </div>
+    <div class="road-col">
+      <h3>Phase 3 — Scale (weeks 21+)</h3>
+      <div class="road-item ri-b">Multi-user collaborative tasks</div>
+      <div class="road-item ri-b">Domain-specific agent packs (Legal, Finance, Code)</div>
+      <div class="road-item ri-b">On-premise / self-hosted enterprise</div>
+      <div class="road-item ri-b">Fine-tuned orchestrator per customer</div>
+      <div class="road-item ri-b">Mobile app</div>
+      <div class="road-item ri-b">Marketplace for community agents</div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:1.5rem">
+    <div class="card-title">MVP Definition of Done</div>
+    <p style="font-size:13px">A non-technical user can submit a complex task (e.g. "Research the top 5 EV charging startups and summarize their funding rounds"), watch agents collaborate in real time, receive a structured answer with citations, and understand which agents contributed — without reading any documentation.</p>
+  </div>
+</div>
+
+<!-- RISKS -->
+<div id="risks" class="section">
+  <h2>Risks & Mitigations</h2>
+
+  <div class="card">
+    <div class="risk-row"><div class="sev sev-h"></div><div class="risk-name">LLM API cost spiral</div><div class="risk-mit">Multi-agent tasks use 5–15× tokens. Mitigate: strict token budgets per task, RL incentivizes early termination, Mimas (cheap) mode as default</div></div>
+    <div class="risk-row"><div class="sev sev-h"></div><div class="risk-name">Agent reliability / hallucination</div><div class="risk-mit">CriticAgent + ReflectAgent catch errors in-loop. Show confidence scores. Never present agent output as verified fact without a source</div></div>
+    <div class="risk-row"><div class="sev sev-h"></div><div class="risk-name">Tool sandbox security</div><div class="risk-mit">PythonAgent + BrowserAgent run in Docker with no internet/filesystem access beyond allow-listed domains. Code execution timeout: 30s</div></div>
+    <div class="risk-row"><div class="sev sev-m"></div><div class="risk-name">Orchestrator policy cold start</div><div class="risk-mit">Ship with pre-trained weights from paper experiments. RL improves with usage. Fallback to rule-based orchestration if RL confidence is low</div></div>
+    <div class="risk-row"><div class="sev sev-m"></div><div class="risk-name">Latency (multi-agent is slow)</div><div class="risk-mit">Stream intermediate outputs so users see progress immediately. Target &lt;2s to first token. Set honest expectations: complex tasks take 30–120s</div></div>
+    <div class="risk-row"><div class="sev sev-m"></div><div class="risk-name">Competitor (AutoGPT, CrewAI)</div><div class="risk-mit">Differentiate on: dynamic topology, RL optimization, research credibility, visualization quality. Focus on power users who've been burned by static pipelines</div></div>
+    <div class="risk-row"><div class="sev sev-l"></div><div class="risk-name">User trust / opacity</div><div class="risk-mit">Full transparency panel is P0. Every agent decision is explainable. "Why did the orchestrator choose this agent?" as a clickable question</div></div>
+  </div>
+</div>
+
+<!-- METRICS -->
+<div id="metrics" class="section">
+  <h2>Success Metrics</h2>
+
+  <div class="grid2">
+    <div class="card">
+      <h3 style="margin-bottom:.75rem">Product metrics (Month 3)</h3>
+      <div class="success-metric"><span class="sm-name">Weekly active users</span><span class="sm-val">1,000+</span></div>
+      <div class="success-metric"><span class="sm-name">Free → Pro conversion</span><span class="sm-val">&gt; 8%</span></div>
+      <div class="success-metric"><span class="sm-name">Task completion rate</span><span class="sm-val">&gt; 85%</span></div>
+      <div class="success-metric"><span class="sm-name">User satisfaction (NPS)</span><span class="sm-val">&gt; 40</span></div>
+      <div class="success-metric"><span class="sm-name">Avg tasks per user/week</span><span class="sm-val">&gt; 5</span></div>
+    </div>
+    <div class="card">
+      <h3 style="margin-bottom:.75rem">Technical metrics</h3>
+      <div class="success-metric"><span class="sm-name">Token reduction vs naive</span><span class="sm-val">&gt; 20%</span></div>
+      <div class="success-metric"><span class="sm-name">Accuracy vs base LLM</span><span class="sm-val">+15-40%</span></div>
+      <div class="success-metric"><span class="sm-name">Time to first token</span><span class="sm-val">&lt; 2s</span></div>
+      <div class="success-metric"><span class="sm-name">Task completion p95 time</span><span class="sm-val">&lt; 120s</span></div>
+      <div class="success-metric"><span class="sm-name">Agent sandbox escapes</span><span class="sm-val">0</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:.75rem">GTM: How we get the first 1,000 users</h3>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="step-num">1</div>
+        <div class="step-body"><h3>Research community launch</h3><p>Open the platform to researchers for free. Ask them to reproduce paper results and cite the product. This seeds credibility and technical Twitter/HN buzz.</p></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">2</div>
+        <div class="step-body"><h3>Demo video of a hard task</h3><p>Record a 90-second video of Puppeteer solving a genuinely hard task (e.g. full literature review + synthesis) that ChatGPT fails at. Post on Twitter, LinkedIn, HN.</p></div>
+      </div>
+      <div class="flow-step">
+        <div class="step-num">3</div>
+        <div class="step-body"><h3>Developer API waitlist</h3><p>Collect developer emails with an API access waitlist at launch. Gives urgency, builds pipeline, and identifies our most motivated users early.</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
