@@ -39,9 +39,8 @@ This is a stand-in until the real arXiv API is wired up. Note that one line.`,
 then SIMULATE its execution and report the result. Use realistic library calls (numpy, sympy, pandas).
 Note in one line: "(simulated; sandbox not yet wired up)".`,
 
-  browser: `You are BrowserAgent. Describe what a headless browser would do: list 1–3 URLs to open, what
-DOM elements would be extracted, and the synthesized findings. Mark this as simulated until a real
-Playwright integration is wired up.`,
+  browser: `You are BrowserAgent. (Note: this prompt is unused — the browser agent runs real headless
+chromium via Playwright in lib/tools/browser.ts and its output is the extracted page text, not LLM-generated.)`,
 
   data: `You are DataAgent. Given the task, propose a pandas/SQL query plan and show the head() of a
 plausible result table. Note "(simulated)" in one line.`,

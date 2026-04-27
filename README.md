@@ -44,13 +44,14 @@ npm run dev
 | Orchestrator policy (heuristic) | ✅ real |
 | LLM calls per agent (OpenRouter / Groq) | ✅ real, streaming |
 | Reasoning agents (planner, critic, modifier, reflect, concluder) | ✅ real LLM |
-| Tool agents (browser, python, wolfram, arxiv, bing, data) | ⚠️ simulated by the LLM with a clear "(simulated)" marker — real integrations are TODO |
+| BrowserAgent (Playwright headless chromium) | ✅ real — fetches URLs from task/prior context, extracts page text |
+| Other tool agents (python, wolfram, arxiv, bing, data) | ⚠️ simulated by the LLM with a clear "(simulated)" marker — real integrations are TODO |
 | RL-learned policy | ❌ heuristic only |
 | Auth, billing, persistence | ❌ none — local only |
 
 ## Roadmap
 
-- Wire real tool integrations: Playwright (browser), e2b (python), Tavily/Brave (search), arXiv API, Wolfram API
+- Wire remaining tool integrations: e2b (python), Tavily/Brave (search), arXiv API, Wolfram API
 - Persist runs to Postgres (Neon) for replay
 - Replace heuristic policy with a small learned policy trained on production traces
 - Auth via Clerk (free tier) once accounts are needed

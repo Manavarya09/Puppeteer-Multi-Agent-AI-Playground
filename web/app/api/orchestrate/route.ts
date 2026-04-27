@@ -2,6 +2,7 @@ import { AGENT_BY_ID } from '@/engine/agents'
 import { extractFeatures, scoreCandidates, selectAgent } from '@/engine/policy'
 import { LLMConfigError, estTokens, streamCompletion, type Provider } from '@/lib/llm'
 import { buildUserPrompt, systemPromptFor } from '@/lib/prompts'
+import { extractUrls, fetchUrls } from '@/lib/tools/browser'
 import type { Edge, EngineEvent, Invocation, OrchestratorDecision, Subspace, TaskState } from '@/engine/types'
 
 export const runtime = 'nodejs'
@@ -192,6 +193,17 @@ async function runAgent(args: RunAgentArgs): Promise<Invocation> {
   }
   args.send({ type: 'agent_start', invocation: { ...inv } })
 
+  if (args.agentId === 'browser') {
+    await runBrowser(inv, args)
+    inv.completionTokens = estTokens(inv.output)
+    inv.durationMs = Date.now() - inv.startTs
+    inv.confidence = inv.output.includes('[error]') ? 0.5 : 0.85
+    inv.status = 'done'
+    inv.endTs = Date.now()
+    args.send({ type: 'agent_end', invocation: { ...inv } })
+    return inv
+  }
+
   const maxTokens = Math.min(spec.maxTokens || 1024, args.subspace === 'titan' ? 4000 : 2000)
   for await (const tok of streamCompletion({
     provider: args.provider,
@@ -255,3 +267,32 @@ function snapshot(s: TaskState): TaskState {
 
 function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)) }
 function rid() { return Math.random().toString(36).slice(2, 10) }
+
+// Real Playwright fetch. Pulls URLs from the task + prior agent outputs, opens
+// each in a headless chromium, extracts visible text, and streams the result
+// back through the same agent_token channel the LLM agents use.
+async function runBrowser(inv: Invocation, args: RunAgentArgs): Promise<void> {
+  const corpus = [args.task, ...args.prior.map(p => p.output)].join('\n')
+  const urls = extractUrls(corpus, 3)
+
+  const emit = (s: string) => {
+    inv.output += s
+    args.send({ type: 'agent_token', invocationId: inv.id, token: s })
+  }
+
+  if (urls.length === 0) {
+    emit('No URLs found in task or prior context. Browser agent skipped — pass URLs in the task or have an upstream agent surface them.\n')
+    return
+  }
+
+  emit(`Visiting ${urls.length} URL${urls.length > 1 ? 's' : ''} via headless chromium…\n\n`)
+  const results = await fetchUrls(urls, args.signal)
+  for (const r of results) {
+    if (r.error) {
+      emit(`[error] ${r.url} — ${r.error} (${r.ms}ms)\n\n`)
+      continue
+    }
+    emit(`## ${r.title || r.url}\n${r.url} — ${r.ms}ms\n\n${r.text || '(empty body)'}\n\n`)
+  }
+  emit(`Confidence: ${results.every(r => !r.error) ? 'high' : 'medium'}`)
+}
