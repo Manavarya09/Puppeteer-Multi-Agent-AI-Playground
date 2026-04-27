@@ -56,18 +56,4 @@ npm run dev
 - Replace heuristic policy with a small learned policy trained on production traces
 - Auth via Clerk (free tier) once accounts are needed
 
-## Repository layout
 
-```
-web/
-  app/
-    page.tsx              landing
-    playground/page.tsx   interactive playground
-    agents/page.tsx       agent library
-    research/page.tsx     paper summary
-    docs/page.tsx         API docs
-    api/orchestrate/      SSE route handler
-  engine/                 types, agents registry, heuristic policy, SSE client
-  components/             Header, Footer, Graph (force-layout SVG)
-  lib/                    LLM provider abstraction + per-agent prompts
-```
