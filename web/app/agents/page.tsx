@@ -9,7 +9,7 @@ export default function AgentsPage() {
       <div className="grid grid-cols-12 gap-8 mb-16">
         <div className="col-span-12 md:col-span-7">
           <span className="eyebrow">§ A · agent library specification</span>
-          <h1 className="font-display text-[clamp(56px,8vw,120px)] leading-[0.95] mt-4 text-bone-100">Eleven specialists,<br /><span className="serif-italic text-signal-amber">one orchestrator</span>.</h1>
+          <h1 className="font-display text-[clamp(56px,8vw,120px)] leading-[0.95] mt-4 text-bone-100">Fifteen specialists,<br /><span className="serif-italic text-signal-amber">one orchestrator</span>.</h1>
         </div>
         <div className="col-span-12 md:col-span-5 self-end text-[15px] text-bone-300/85 leading-relaxed">
           Each agent is a containerized service exposing a uniform <code className="font-mono text-bone-100">/invoke</code> contract.

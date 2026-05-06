@@ -4,13 +4,41 @@ import { AGENT_BY_ID } from '@/engine/agents'
 import { runOrchestration } from '@/engine/client'
 import type { EngineEvent, Invocation, OrchestratorDecision, Subspace, TaskState } from '@/engine/types'
 import { Graph } from '@/components/Graph'
+import { RichOutput } from '@/components/RichOutput'
 
 const TEMPLATES: { label: string; task: string }[] = [
-  { label: 'Hard math', task: 'Solve the system: 3x² − 5x + 2 = 0 and 2x + 4y = 11. Show every step and verify the result with a Python script.' },
-  { label: 'Market scan', task: 'Compare Stripe and Adyen on developer experience, pricing, and recent product launches. Include sources.' },
-  { label: 'Paper deep-dive', task: 'Find the latest arXiv work on RL-driven multi-agent orchestration and summarise the three most cited approaches.' },
-  { label: 'Research memo', task: 'Write a 200-word memo on the unit economics of selling AI orchestration to enterprise customers, with a clear recommendation.' },
-  { label: 'Code review', task: 'Refactor a brittle if/else cascade for billing tier resolution into a clean state machine. Verify behaviour with unit tests.' },
+  {
+    label: 'Symbolic math',
+    task: 'Find all real solutions to x⁴ − 5x² + 4 = 0, then compute the definite integral of (x² + 1)/(x³ + 3x) from x=1 to x=3 to four decimal places. Verify both with a Python check.',
+  },
+  {
+    label: 'Live market scan',
+    task: 'Compare Stripe vs Adyen for a Series B SaaS launching in the EU: pricing for €2M/year volume, developer experience, SCA handling, and any product launches in the past 6 months. Cite every claim with a source URL.',
+  },
+  {
+    label: 'arXiv deep-dive',
+    task: 'Survey arXiv work from the last 18 months on tool-using LLM agents and reinforcement-learned orchestration policies. Pick the three most influential papers, summarise each in 3 bullets, and identify the open problem they all leave unsolved.',
+  },
+  {
+    label: 'Strategy memo',
+    task: 'Draft a 250-word board memo on whether a 12-person AI infra startup should raise a Series A now or extend the seed for 9 more months. Cover dilution, market window, hiring runway, and a recommendation. Use real 2025 funding-environment data where possible.',
+  },
+  {
+    label: 'Code design',
+    task: 'Design a TypeScript rate limiter that supports per-user and per-IP buckets, sliding window with 1-minute granularity, and Redis-backed persistence. Provide the full implementation, three failure modes, and unit tests. Verify the sliding-window math with a Python simulation.',
+  },
+  {
+    label: 'Dev trend pulse',
+    task: 'What are developers actually shipping with local LLMs in the last 60 days? Pull recent Hacker News stories, identify the three dominant patterns, and name the tools/frameworks that won.',
+  },
+  {
+    label: 'Data forensics',
+    task: 'Given the sales rows below, find which sales rep is most under-quota relative to their territory mean, and explain the gap.\n```csv\nrep,territory,quota,actual\nLin,EMEA,1200000,840000\nKai,EMEA,1100000,1180000\nMaya,APAC,900000,610000\nRavi,APAC,950000,1020000\nJana,AMER,1400000,1310000\nOmar,AMER,1350000,990000\n```',
+  },
+  {
+    label: 'Browser drilldown',
+    task: 'Read the Anthropic and OpenAI pricing pages and produce a side-by-side table comparing flagship-model input/output token prices, prompt-cache discounts, and context windows. Note any pricing footnote that meaningfully changes the comparison.\nhttps://www.anthropic.com/pricing\nhttps://openai.com/api/pricing/',
+  },
 ]
 
 const emptyState = (task: string, subspace: Subspace, budget: number): TaskState => ({
@@ -467,6 +495,7 @@ function FinalOutput({ state }: { state: TaskState | null }) {
     return <Empty msg="The synthesised answer will appear here. ConcluderAgent runs after the critic / modifier loop completes." />
   }
   const concluder = [...state.invocations].reverse().find(i => i.agentId === 'concluder')
+  const verifier = [...state.invocations].reverse().find(i => i.agentId === 'verifier' && i.status === 'done')
   if (!concluder) {
     return (
       <div className="text-[13px] text-bone-300/70 italic">
@@ -474,12 +503,35 @@ function FinalOutput({ state }: { state: TaskState | null }) {
       </div>
     )
   }
+  const sources = state.invocations.flatMap(i => i.sources ?? [])
   return (
     <article className="prose-output">
-      <pre className="font-sans text-[14.5px] leading-[1.7] text-bone-100 whitespace-pre-wrap">{concluder.output}</pre>
+      <RichOutput text={concluder.output} sources={sources} />
       {concluder.status === 'running' && <span className="inline-block w-[8px] h-[16px] bg-signal-amber align-middle ml-[2px] animate-pulse" />}
+      {verifier && <VerifierPanel verifier={verifier} sources={sources} />}
       <SourceCitations state={state} />
     </article>
+  )
+}
+
+function VerifierPanel({ verifier, sources }: { verifier: Invocation; sources: { title: string; url: string }[] }) {
+  const verdictMatch = verifier.output.match(/overall:\s*(ok|revise|block)/i)
+  const verdict = verdictMatch?.[1].toLowerCase() ?? null
+  const tone = verdict === 'ok' ? 'border-emerald-400/40 bg-emerald-400/5'
+    : verdict === 'block' ? 'border-rose-400/40 bg-rose-400/5'
+    : verdict === 'revise' ? 'border-amber-400/40 bg-amber-400/5'
+    : 'border-bone-100/15 bg-bone-100/[0.02]'
+  const label = verdict === 'ok' ? 'Verifier · Cleared' : verdict === 'revise' ? 'Verifier · Revise' : verdict === 'block' ? 'Verifier · Blocked' : 'Verifier'
+  return (
+    <details className={`mt-6 border ${tone}`} open>
+      <summary className="cursor-pointer px-3 py-2 eyebrow text-bone-200 select-none flex items-center justify-between">
+        <span>{label}</span>
+        <span className="font-mono text-[10px] text-bone-300/70 normal-case tracking-normal">{verifier.completionTokens} tok</span>
+      </summary>
+      <div className="px-3 pb-3 pt-1">
+        <RichOutput text={verifier.output} sources={sources} />
+      </div>
+    </details>
   )
 }
 

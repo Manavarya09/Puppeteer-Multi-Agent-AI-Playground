@@ -5,12 +5,12 @@ create table if not exists runs (
   budget integer not null,
   status text not null,
   total_tokens integer not null default 0,
-  cost_usd numeric(10,4) not null default 0,
+  cost_usd real not null default 0,
   final_output text not null default '',
   final_confidence real not null default 0,
-  started_at timestamptz,
-  completed_at timestamptz,
-  snapshot jsonb
+  started_at integer,
+  completed_at integer,
+  snapshot text
 );
 
 create table if not exists invocations (
@@ -25,23 +25,23 @@ create table if not exists invocations (
   completion_tokens integer not null,
   duration_ms integer not null,
   confidence real not null,
-  start_ts timestamptz,
-  end_ts timestamptz,
-  sources jsonb
+  start_ts integer,
+  end_ts integer,
+  sources text
 );
 
 create table if not exists decisions (
-  id bigserial primary key,
+  id integer primary key autoincrement,
   run_id text not null references runs(id) on delete cascade,
   step integer not null,
   selected text not null,
   rationale text not null,
-  candidates jsonb not null,
-  decided_at timestamptz
+  candidates text not null,
+  decided_at integer
 );
 
 create table if not exists edges (
-  id bigserial primary key,
+  id integer primary key autoincrement,
   run_id text not null references runs(id) on delete cascade,
   from_agent text not null,
   to_agent text not null,

@@ -2,20 +2,14 @@ import { AGENTS, AGENT_BY_ID } from './agents'
 import type { AgentSpec } from './agents'
 import type { CandidateScore, Invocation, TaskFeatures } from './types'
 
-// ---------------------------------------------------------------------------
-// Task feature extractor — keyword-driven proxy for the embedding-based
-// classifier described in PRD §13.1. Intentionally interpretable so the
-// orchestrator's rationale strings are meaningful to end users.
-// ---------------------------------------------------------------------------
-
 const KEYWORDS: Record<keyof Omit<TaskFeatures, 'complexity'>, RegExp[]> = {
-  math: [/\bmath/i, /equation/i, /solve/i, /integral/i, /derivative/i, /prime/i, /factor/i, /algebra/i, /probability/i, /\b\d+\s*[+\-*/^]\s*\d+/, /\bgsm/i, /calculate/i, /compute/i],
-  web: [/web/i, /search/i, /look ?up/i, /current/i, /latest/i, /news/i, /recent/i, /today/i, /price/i, /url/i, /http/i, /\.com\b/i],
-  code: [/python/i, /script/i, /\bcode\b/i, /function/i, /algorithm/i, /implement/i, /debug/i, /unit test/i, /regex/i],
-  research: [/paper/i, /arxiv/i, /citation/i, /literature/i, /benchmark/i, /survey/i, /study/i, /research/i, /report/i, /analysis/i],
-  critique: [/review/i, /critique/i, /audit/i, /verify/i, /fact ?check/i, /accuracy/i, /sound/i, /correct/i],
-  synth: [/summarise|summarize/i, /synthesi[sz]e/i, /draft/i, /memo/i, /executive summary/i, /brief/i, /report/i],
-  plan: [/plan/i, /steps?/i, /strategy/i, /roadmap/i, /breakdown/i],
+  math: [/\bmath/i, /equation/i, /solve/i, /integral/i, /derivative/i, /prime/i, /factor/i, /algebra/i, /probability/i, /\b\d+\s*[+\-*/^]\s*\d+/, /\bgsm/i, /calculate/i, /compute/i, /matrix/i, /eigen/i],
+  web: [/web/i, /search/i, /look ?up/i, /current/i, /latest/i, /news/i, /recent/i, /today/i, /price/i, /url/i, /http/i, /\.com\b/i, /trending/i, /launch/i, /released?/i],
+  code: [/python/i, /javascript|typescript|tsx?\b/i, /script/i, /\bcode\b/i, /function/i, /algorithm/i, /implement/i, /debug/i, /unit test/i, /regex/i, /refactor/i, /api\b/i, /class\b/i, /component/i],
+  research: [/paper/i, /arxiv/i, /citation/i, /literature/i, /benchmark/i, /survey/i, /study/i, /research/i, /report/i, /analysis/i, /state[- ]of[- ]the[- ]art|sota/i],
+  critique: [/review/i, /critique/i, /audit/i, /verify/i, /fact ?check/i, /accuracy/i, /sound/i, /correct/i, /evaluate/i],
+  synth: [/summari[sz]e/i, /synthesi[sz]e/i, /draft/i, /memo/i, /executive summary/i, /brief/i, /report/i, /write up/i],
+  plan: [/plan/i, /steps?/i, /strategy/i, /roadmap/i, /breakdown/i, /how (?:do|would|to)/i, /design/i],
 }
 
 export function extractFeatures(task: string): TaskFeatures {
@@ -26,28 +20,21 @@ export function extractFeatures(task: string): TaskFeatures {
     for (const r of KEYWORDS[key]) if (r.test(task)) score += 1
     f[key] = Math.min(1, score / 2.5)
   }
-  // Always at least a touch of plan + synth so the pipeline has structure.
   f.plan = Math.max(0.35, f.plan)
   f.synth = Math.max(0.4, f.synth)
-  // Complexity: rough proxy — length + question marks + commas.
   const len = Math.min(1, t.length / 600)
   const punct = Math.min(1, ((t.match(/[?,;]/g) || []).length) / 6)
   f.complexity = Math.min(1, 0.3 + 0.5 * len + 0.4 * punct)
   return f
 }
 
-// ---------------------------------------------------------------------------
-// Policy π(a_t | S_t, τ). A softmax over a hand-crafted score that mirrors
-// the affinity / cost tradeoff the RL policy converges on per PRD §13.2.
-// ---------------------------------------------------------------------------
-
 interface PolicyContext {
   features: TaskFeatures
   step: number
   invocations: Invocation[]
-  budgetRemaining: number   // 0..1
-  lambda: number            // cost sensitivity (matches PRD R_t formula)
-  subspaceCostMul: number   // titan more expensive than mimas
+  budgetRemaining: number
+  lambda: number
+  subspaceCostMul: number
 }
 
 export function scoreCandidates(ctx: PolicyContext): CandidateScore[] {
@@ -56,70 +43,90 @@ export function scoreCandidates(ctx: PolicyContext): CandidateScore[] {
   const lastTwo = ctx.invocations.slice(-2).map(i => i.agentId)
   const planned = used.has('planner')
   const concluded = used.has('concluder')
-  const haveOutput = ctx.invocations.some(i => ['bing', 'arxiv', 'python', 'browser', 'data', 'wolfram', 'modifier'].includes(i.agentId))
+  const verified = used.has('verifier')
+  const TOOL_IDS = ['bing', 'hn', 'arxiv', 'python', 'browser', 'data', 'wolfram']
+  const toolFiredCount = ctx.invocations.filter(i => TOOL_IDS.includes(i.agentId) && i.status === 'done').length
+  const haveOutput = ctx.invocations.some(i => [...TOOL_IDS, 'modifier', 'coder'].includes(i.agentId))
   const recentlyCriticised = lastAgent === 'critic'
 
   const raw: { a: AgentSpec; score: number }[] = AGENTS.map(a => {
     let s = 0
 
-    // 1. Plan-first prior
-    if (a.id === 'planner') s += planned ? -2.4 : 1.8 + ctx.features.plan * 0.6
+    // 1. Plan first.
+    if (a.id === 'planner') s += planned ? -3.0 : 1.9 + ctx.features.plan * 0.6
 
-    // 2. Tool agents fire when their affinity hits.
+    // 2. Tool agents — affinity-driven, with diversity penalty.
     if (a.kind === 'tool') {
       const aff = a.affinities
-      const matchedFeatures: number[] = []
+      const matched: number[] = []
       for (const k of Object.keys(aff) as (keyof typeof aff)[]) {
         const fv = (ctx.features as any)[k] as number
         const av = aff[k] ?? 0
-        matchedFeatures.push(fv * av)
+        matched.push(fv * av)
       }
-      const peak = matchedFeatures.length ? Math.max(...matchedFeatures) : 0
-      s += peak * 1.6
-      // Encourage diversity — re-using the same tool penalised mildly.
-      if (used.has(a.id)) s -= 0.9
+      const peak = matched.length ? Math.max(...matched) : 0
+      s += peak * 1.7
+      if (used.has(a.id)) s -= 1.1
+      // Bing and HN partially substitute — discourage firing both unless task is broad.
+      if (a.id === 'hn' && used.has('bing') && ctx.features.web < 0.6) s -= 0.6
+      if (a.id === 'bing' && used.has('hn') && ctx.features.web < 0.6) s -= 0.4
     }
 
-    // 3. Critic / Modifier loop after we have substantive output.
+    // 3. CoderAgent — pure code synthesis when code feature dominates.
+    if (a.id === 'coder') {
+      s += ctx.features.code * 1.7 - 0.4
+      if (used.has('coder')) s -= 1.0
+    }
+
+    // 4. Critic / Modifier loop.
     if (a.id === 'critic') {
-      s += haveOutput ? 1.2 : -1.5
-      if (recentlyCriticised) s -= 1.6
+      s += haveOutput ? 1.3 : -1.6
+      if (recentlyCriticised) s -= 1.8
+      if (used.has('critic')) s -= 0.6
     }
     if (a.id === 'modifier') {
-      s += recentlyCriticised ? 1.6 : -0.8
+      s += recentlyCriticised ? 1.7 : -0.9
     }
     if (a.id === 'reflect') {
-      s += ctx.step >= 3 && ctx.features.complexity > 0.55 ? 0.8 : -0.6
-      if (used.has('reflect')) s -= 1.2
+      s += ctx.step >= 3 && ctx.features.complexity > 0.55 ? 0.9 : -0.7
+      if (used.has('reflect')) s -= 1.4
     }
 
-    // 4. Concluder gates on having a critic→modifier cycle (or plenty of output).
+    // 5. Concluder — needs at least one tool fire AND ideally a critic pass.
     if (a.id === 'concluder') {
-      const cycleDone = used.has('critic') && used.has('modifier')
-      const enoughOutput = ctx.invocations.filter(i => i.status === 'done').length >= 4
-      s += cycleDone || enoughOutput ? 1.5 : -2.5
+      const enoughEvidence = toolFiredCount >= 1 || used.has('coder')
+      const cycleDone = used.has('critic')
+      s += enoughEvidence && cycleDone ? 1.6 : enoughEvidence ? 0.6 : -2.6
+      if (used.has('concluder')) s -= 4.0
     }
 
-    // 5. Terminator only after concluder.
+    // 6. Verifier — final ground-check between concluder and terminator.
+    if (a.id === 'verifier') {
+      s += concluded && !verified ? 2.4 : -3.0
+      if (used.has('verifier')) s -= 5.0
+      // Skip verifier on tasks with no factual surface (pure code synth).
+      if (ctx.features.research < 0.2 && ctx.features.web < 0.2 && ctx.features.math < 0.2) s -= 0.8
+    }
+
+    // 7. Terminator — only after concluder (and after verifier when warranted).
     if (a.id === 'terminator') {
-      s += concluded ? 3.0 : -5.0
+      s += concluded ? 3.2 : -6.0
+      if (concluded && !verified && (ctx.features.research >= 0.3 || ctx.features.web >= 0.3)) s -= 1.0
     }
 
-    // 6. Avoid two-step ping-pong.
+    // 8. Anti-ping-pong.
     if (lastTwo.length === 2 && lastTwo[0] === a.id && lastTwo[1] !== a.id) s -= 0.4
-    if (lastAgent === a.id) s -= 0.8
+    if (lastAgent === a.id) s -= 0.9
 
-    // 7. Reward shaping: cost penalty from PRD R_t = r - λ·C_t
+    // 9. Cost shaping.
     const stepCost = (a.costWeight / 7) * ctx.subspaceCostMul
     s -= ctx.lambda * stepCost
-    // Hard penalty when running out of budget.
-    if (ctx.budgetRemaining < 0.25 && a.id !== 'concluder' && a.id !== 'terminator') s -= 1.4
+    if (ctx.budgetRemaining < 0.25 && !['concluder', 'verifier', 'terminator'].includes(a.id)) s -= 1.5
 
     return { a, score: s }
   })
 
-  // Softmax with temperature 0.7 — the policy is sharp but not greedy.
-  const T = 0.7
+  const T = 0.65
   const max = Math.max(...raw.map(r => r.score))
   const exps = raw.map(r => Math.exp((r.score - max) / T))
   const Z = exps.reduce((acc, v) => acc + v, 0)
@@ -140,19 +147,22 @@ function describeRationale(a: AgentSpec, margin: number): string {
   const conf = margin > 0.35 ? 'high-confidence' : margin > 0.15 ? 'moderate' : 'narrow'
   const bits: Record<string, string> = {
     planner: 'task lacks an explicit plan — decomposing into ordered sub-steps before tool dispatch.',
-    bing: 'real-time web context appears necessary; routing to Bing for a grounded snapshot.',
-    arxiv: 'task has scholarly intent — pulling related literature via arXiv.',
-    python: 'computation or verification step required — invoking sandboxed Python.',
+    bing: 'web context required — querying DuckDuckGo for grounded snippets.',
+    hn: 'task has recency / dev-trend signal — pulling Hacker News stories.',
+    arxiv: 'scholarly intent detected — fetching arXiv pre-prints.',
+    python: 'computation or verification needed — running sandboxed Python.',
     wolfram: 'symbolic / numeric closed-form likely faster than free-form reasoning.',
-    browser: 'search snippets insufficient — opening a headless browser for deeper context.',
-    data: 'tabular reasoning required — DataAgent loaded for pandas/SQL operations.',
-    critic: 'prior output is now substantive enough to audit for hallucinations and gaps.',
-    modifier: 'critic flagged issues — applying targeted edits to prior output.',
-    reflect: 'trajectory is becoming long; reflecting before committing more budget.',
-    concluder: 'sufficient evidence accrued — synthesising final response.',
-    terminator: 'final output produced and validated; halting orchestration.',
+    browser: 'snippets insufficient — opening URLs in headless Chromium for full text.',
+    data: 'tabular operations required — generating pandas/sqlite over provided data.',
+    coder: 'task is code-shaped — producing implementation with design tradeoffs.',
+    critic: 'prior output substantive — auditing for hallucinations, gaps, unit errors.',
+    modifier: 'critic flagged issues — applying corrections in-place.',
+    reflect: 'trajectory deepening — reflecting before committing more budget.',
+    concluder: 'evidence accrued — synthesising the final response.',
+    verifier: 'concluder draft ready — ground-checking each load-bearing claim against sources.',
+    terminator: 'final output verified; halting orchestration.',
   }
   return `${conf} pick · ${bits[a.id] ?? 'task-aligned default.'}`
 }
 
-export function policyTemperature(): number { return 0.7 }
+export function policyTemperature(): number { return 0.65 }

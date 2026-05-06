@@ -189,7 +189,7 @@ function AgentMatrix() {
             <h2 className="font-display text-[64px] leading-[0.95] mt-3 text-bone-100">A library of <span className="serif-italic text-signal-amber">specialists</span>.</h2>
           </div>
           <div className="col-span-12 md:col-span-5 md:col-start-8 self-end text-[15px] text-bone-300/80">
-            Eleven agents, each with a defined role, isolation envelope, and cost weight.
+            Fifteen agents, each with a defined role, isolation envelope, and cost weight.
             The orchestrator picks among them step-by-step. None of these agents are fine-tuned
             models — they are prompt + tool envelopes over standard LLM APIs.
           </div>

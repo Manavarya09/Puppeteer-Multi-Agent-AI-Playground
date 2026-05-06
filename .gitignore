@@ -3,3 +3,7 @@ node_modules/
 .next/
 .env*.local
 *.log
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm

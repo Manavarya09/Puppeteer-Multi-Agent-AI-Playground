@@ -9,14 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "better-sqlite3": "^9.6.0",
     "framer-motion": "^12.0.0",
     "next": "^15.1.0",
-    "pg": "^8.13.3",
     "playwright": "^1.59.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.10.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",

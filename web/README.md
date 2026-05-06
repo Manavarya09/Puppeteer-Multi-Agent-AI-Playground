@@ -13,10 +13,10 @@ npm run dev
 
 Open http://localhost:3000/playground and submit a task.
 
-If you want run history and replay, apply the database schema:
+Run history and replay are stored locally in SQLite by default. To inspect it:
 
 ```bash
-psql "$DATABASE_URL" -f db/schema.sql
+sqlite3 db/local.sqlite
 ```
 
 ## Scripts

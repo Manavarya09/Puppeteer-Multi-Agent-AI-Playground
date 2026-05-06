@@ -5,6 +5,7 @@ import { buildUserPrompt, systemPromptFor } from '@/lib/prompts'
 import { extractUrls, fetchUrls } from '@/lib/tools/browser'
 import { queryArxiv } from '@/lib/tools/arxiv'
 import { search } from '@/lib/tools/search'
+import { searchHackerNews } from '@/lib/tools/hn'
 import { queryWolfram } from '@/lib/tools/wolfram'
 import { runPython } from '@/lib/tools/python'
 import { createRun, dbEnabled, insertDecision, insertInvocation, upsertEdge, updateRunFinal } from '@/lib/db'
@@ -187,9 +188,48 @@ export async function POST(req: Request) {
         } catch { /* swallow — we still emit complete */ }
       }
 
+      // If we have a concluder but no verifier, run one verifier pass for accuracy.
+      const hasConcluderNow = state.invocations.some(i => i.agentId === 'concluder' && i.status === 'done')
+      const hasVerifier = state.invocations.some(i => i.agentId === 'verifier')
+      const shouldVerify = hasConcluderNow && !hasVerifier && state.status === 'running'
+        && (features.research >= 0.2 || features.web >= 0.2 || features.math >= 0.3)
+      if (shouldVerify) {
+        const forced: OrchestratorDecision = {
+          step: state.invocations.length,
+          candidates: scoreCandidates({
+            features, step: state.invocations.length,
+            invocations: state.invocations, budgetRemaining: 0.15,
+            lambda: 0.3, subspaceCostMul: 1,
+          }),
+          selected: 'verifier',
+          rationale: 'forcing final verifier pass to ground-check claims before completion.',
+          ts: Date.now(),
+        }
+        state.decisions.push(forced)
+        send({ type: 'decision', decision: forced })
+        try {
+          const inv = await runAgent({
+            agentId: 'verifier', step: forced.step, task, prior: state.invocations,
+            provider, model, subspace,
+            send, signal: req.signal,
+          })
+          state.invocations.push(inv)
+          state.totalTokens += inv.promptTokens + inv.completionTokens
+          void safeDb(() => insertInvocation(state.id, inv))
+          const prev = state.invocations[state.invocations.length - 2]
+          if (prev) touchEdge(state, prev.agentId, inv.agentId, forced.step, send)
+        } catch { /* swallow */ }
+      }
+
       const concluder = [...state.invocations].reverse().find(i => i.agentId === 'concluder')
+      const verifier = [...state.invocations].reverse().find(i => i.agentId === 'verifier' && i.status === 'done')
       state.finalOutput = concluder?.output ?? '(no synthesis produced)'
-      state.finalConfidence = concluder?.confidence ?? 0
+      // Penalise final confidence if verifier flagged the draft.
+      const verifierVerdict = verifier?.output.toLowerCase() ?? ''
+      const verdictPenalty = /overall:\s*block/.test(verifierVerdict) ? 0.4
+        : /overall:\s*revise/.test(verifierVerdict) ? 0.15
+        : 0
+      state.finalConfidence = Math.max(0, (concluder?.confidence ?? 0) - verdictPenalty)
       state.completedAt = Date.now()
       if (state.status === 'running') state.status = 'complete'
       send({ type: 'complete', state: snapshot(state) })
@@ -231,7 +271,7 @@ async function runAgent(args: RunAgentArgs): Promise<Invocation> {
   const userPrompt = buildUserPrompt(args.task, args.prior)
   const systemPrompt = systemPromptFor(args.agentId)
   let promptText = `[system]\n${systemPrompt}\n\n[user]\n${userPrompt}`
-  if (['bing', 'arxiv', 'wolfram', 'browser'].includes(args.agentId)) {
+  if (['bing', 'hn', 'arxiv', 'wolfram', 'browser'].includes(args.agentId)) {
     promptText = `Tool invocation: ${args.agentId} for task "${args.task}"`
   }
 
@@ -264,6 +304,12 @@ async function runAgent(args: RunAgentArgs): Promise<Invocation> {
 
     if (args.agentId === 'bing') {
       const tool = await runSearchAgent(args)
+      applyToolResult(inv, tool, args.send)
+      return inv
+    }
+
+    if (args.agentId === 'hn') {
+      const tool = await runHnAgent(args)
       applyToolResult(inv, tool, args.send)
       return inv
     }
@@ -358,6 +404,29 @@ async function runSearchAgent(args: RunAgentArgs): Promise<ToolOutput> {
     output: lines.join('\n'),
     sources: res.results.map(r => ({ title: r.title, url: r.url })),
     confidence: 0.82,
+  }
+}
+
+async function runHnAgent(args: RunAgentArgs): Promise<ToolOutput> {
+  const res = await searchHackerNews(args.task, 5, args.signal)
+  if (res.hits.length === 0) {
+    return { output: 'No Hacker News stories found for the query.\n', confidence: 0.5 }
+  }
+  const lines: string[] = ['Hacker News stories (Algolia, sorted by relevance):', '']
+  res.hits.forEach((h, i) => {
+    lines.push(`${i + 1}. ${h.title}`)
+    lines.push(h.url)
+    const meta: string[] = []
+    if (typeof h.points === 'number') meta.push(`${h.points} points`)
+    if (h.author) meta.push(`by ${h.author}`)
+    if (h.createdAt) meta.push(h.createdAt.slice(0, 10))
+    if (meta.length) lines.push(meta.join(' · '))
+    lines.push('')
+  })
+  return {
+    output: lines.join('\n'),
+    sources: res.hits.map(h => ({ title: h.title, url: h.url })),
+    confidence: 0.8,
   }
 }
 
@@ -506,9 +575,14 @@ function inferConfidence(agentId: string, output: string): number {
     const k = m[1].toLowerCase()
     return k === 'high' ? 0.9 : k === 'medium' ? 0.7 : 0.5
   }
+  if (agentId === 'verifier') {
+    if (/overall:\s*ok/i.test(output)) return 0.92
+    if (/overall:\s*revise/i.test(output)) return 0.7
+    if (/overall:\s*block/i.test(output)) return 0.45
+  }
   const base: Record<string, number> = {
-    planner: 0.78, critic: 0.7, modifier: 0.85, concluder: 0.82, reflect: 0.76,
-    bing: 0.7, arxiv: 0.78, python: 0.86, browser: 0.72, data: 0.8, wolfram: 0.92,
+    planner: 0.78, critic: 0.7, modifier: 0.85, concluder: 0.82, reflect: 0.76, coder: 0.84, verifier: 0.85,
+    bing: 0.7, hn: 0.7, arxiv: 0.78, python: 0.86, browser: 0.72, data: 0.8, wolfram: 0.92,
   }
   const b = base[agentId] ?? 0.7
   return Math.min(0.97, b + Math.min(0.1, output.length / 5000))
