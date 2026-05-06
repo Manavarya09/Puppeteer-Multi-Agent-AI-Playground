@@ -10,7 +10,7 @@ export default function ResearchPage() {
 
       <article className="grid grid-cols-12 gap-8">
         <aside className="col-span-12 md:col-span-3 space-y-6 text-[12px] font-mono">
-          <Meta k="paper" v="Puppeteer · 2026" />
+          <Meta k="paper" v="Puppeteer paper" />
           <Meta k="venue" v="ICLR submission · accepted" />
           <Meta k="authors" v="anonymised" />
           <Meta k="benchmarks" v="GSM-Hard · MMLU-Pro · HumanEval" />
