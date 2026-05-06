@@ -3,6 +3,11 @@ import { extractFeatures, scoreCandidates, selectAgent } from '@/engine/policy'
 import { LLMConfigError, estTokens, streamCompletion, type Provider } from '@/lib/llm'
 import { buildUserPrompt, systemPromptFor } from '@/lib/prompts'
 import { extractUrls, fetchUrls } from '@/lib/tools/browser'
+import { queryArxiv } from '@/lib/tools/arxiv'
+import { search } from '@/lib/tools/search'
+import { queryWolfram } from '@/lib/tools/wolfram'
+import { runPython } from '@/lib/tools/python'
+import { createRun, dbEnabled, insertDecision, insertInvocation, upsertEdge, updateRunFinal } from '@/lib/db'
 import type { Edge, EngineEvent, Invocation, OrchestratorDecision, Subspace, TaskState } from '@/engine/types'
 
 export const runtime = 'nodejs'
@@ -19,8 +24,46 @@ interface RunBody {
 
 const MAX_STEPS = 12
 const TASK_MAX_LEN = 4000
+const RATE_WINDOW_MS = 60_000
+const DEFAULT_RATE_LIMIT = 30
+
+const rateBuckets = new Map<string, { windowStart: number; count: number }>()
+
+function getClientIp(req: Request): string {
+  const fwd = req.headers.get('x-forwarded-for')
+  if (fwd) return fwd.split(',')[0].trim()
+  return req.headers.get('x-real-ip') || 'unknown'
+}
+
+function checkRateLimit(ip: string): boolean {
+  const limit = Math.max(1, Number(process.env.RATE_LIMIT_PER_MIN || DEFAULT_RATE_LIMIT))
+  const now = Date.now()
+  const bucket = rateBuckets.get(ip)
+  if (!bucket || now - bucket.windowStart > RATE_WINDOW_MS) {
+    rateBuckets.set(ip, { windowStart: now, count: 1 })
+    return true
+  }
+  if (bucket.count >= limit) return false
+  bucket.count += 1
+  return true
+}
+
+async function safeDb<T>(fn: () => Promise<T>): Promise<T | null> {
+  if (!dbEnabled()) return null
+  try {
+    return await fn()
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error('db error:', err)
+    return null
+  }
+}
 
 export async function POST(req: Request) {
+  const ip = getClientIp(req)
+  if (!checkRateLimit(ip)) {
+    return new Response(JSON.stringify({ error: 'rate limit exceeded' }), { status: 429 })
+  }
   let body: RunBody
   try {
     body = await req.json()
@@ -34,7 +77,7 @@ export async function POST(req: Request) {
   const subspace: Subspace = body.subspace === 'titan' ? 'titan' : 'mimas'
   const budget = clamp(body.budget ?? 12000, 1000, 100000)
   const provider: Provider = body.provider === 'groq' ? 'groq' : 'openrouter'
-  const model = body.model
+  const { model } = body
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -54,6 +97,7 @@ export async function POST(req: Request) {
         startedAt: Date.now(),
       }
       send({ type: 'state', state: snapshot(state) })
+      await safeDb(() => createRun(state))
 
       // Per-step orchestration loop. Reuses the same heuristic policy from
       // engine/policy.ts (compiled both client- and server-side).
@@ -73,6 +117,7 @@ export async function POST(req: Request) {
         const decision: OrchestratorDecision = { step, candidates, selected, rationale, ts: Date.now() }
         state.decisions.push(decision)
         send({ type: 'decision', decision })
+        void safeDb(() => insertDecision(state.id, decision))
 
         if (selected === 'terminator') break
 
@@ -84,6 +129,7 @@ export async function POST(req: Request) {
           })
           state.invocations.push(inv)
           state.totalTokens += inv.promptTokens + inv.completionTokens
+          void safeDb(() => insertInvocation(state.id, inv))
 
           const prev = state.invocations[state.invocations.length - 2]
           if (prev) touchEdge(state, prev.agentId, inv.agentId, step, send)
@@ -135,6 +181,7 @@ export async function POST(req: Request) {
           })
           state.invocations.push(inv)
           state.totalTokens += inv.promptTokens + inv.completionTokens
+          void safeDb(() => insertInvocation(state.id, inv))
           const prev = state.invocations[state.invocations.length - 2]
           if (prev) touchEdge(state, prev.agentId, inv.agentId, forced.step, send)
         } catch { /* swallow — we still emit complete */ }
@@ -146,6 +193,7 @@ export async function POST(req: Request) {
       state.completedAt = Date.now()
       if (state.status === 'running') state.status = 'complete'
       send({ type: 'complete', state: snapshot(state) })
+      await safeDb(() => updateRunFinal(state))
       close()
     },
   })
@@ -172,11 +220,20 @@ interface RunAgentArgs {
   signal: AbortSignal
 }
 
+interface ToolOutput {
+  output: string
+  sources?: { title: string; url: string }[]
+  confidence?: number
+}
+
 async function runAgent(args: RunAgentArgs): Promise<Invocation> {
   const spec = AGENT_BY_ID[args.agentId]
   const userPrompt = buildUserPrompt(args.task, args.prior)
   const systemPrompt = systemPromptFor(args.agentId)
-  const promptText = `[system]\n${systemPrompt}\n\n[user]\n${userPrompt}`
+  let promptText = `[system]\n${systemPrompt}\n\n[user]\n${userPrompt}`
+  if (['bing', 'arxiv', 'wolfram', 'browser'].includes(args.agentId)) {
+    promptText = `Tool invocation: ${args.agentId} for task "${args.task}"`
+  }
 
   const inv: Invocation = {
     id: rid(),
@@ -193,40 +250,239 @@ async function runAgent(args: RunAgentArgs): Promise<Invocation> {
   }
   args.send({ type: 'agent_start', invocation: { ...inv } })
 
-  if (args.agentId === 'browser') {
-    await runBrowser(inv, args)
+  try {
+    if (args.agentId === 'browser') {
+      await runBrowser(inv, args)
+      inv.completionTokens = estTokens(inv.output)
+      inv.durationMs = Date.now() - inv.startTs
+      inv.confidence = inv.output.includes('[error]') ? 0.5 : 0.85
+      inv.status = 'done'
+      inv.endTs = Date.now()
+      args.send({ type: 'agent_end', invocation: { ...inv } })
+      return inv
+    }
+
+    if (args.agentId === 'bing') {
+      const tool = await runSearchAgent(args)
+      applyToolResult(inv, tool, args.send)
+      return inv
+    }
+
+    if (args.agentId === 'arxiv') {
+      const tool = await runArxivAgent(args)
+      applyToolResult(inv, tool, args.send)
+      return inv
+    }
+
+    if (args.agentId === 'wolfram') {
+      const tool = await runWolframAgent(args)
+      applyToolResult(inv, tool, args.send)
+      return inv
+    }
+
+    if (args.agentId === 'python') {
+      const tool = await runPythonAgent(args, inv)
+      applyToolResult(inv, tool, args.send)
+      return inv
+    }
+
+    if (args.agentId === 'data') {
+      const tool = await runDataAgent(args, inv)
+      applyToolResult(inv, tool, args.send)
+      return inv
+    }
+
+    const maxTokens = Math.min(spec.maxTokens || 1024, args.subspace === 'titan' ? 4000 : 2000)
+    for await (const tok of streamCompletion({
+      provider: args.provider,
+      model: args.model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+      maxTokens,
+      temperature: args.subspace === 'titan' ? 0.3 : 0.5,
+      signal: args.signal,
+    })) {
+      inv.output += tok
+      args.send({ type: 'agent_token', invocationId: inv.id, token: tok })
+    }
+
     inv.completionTokens = estTokens(inv.output)
     inv.durationMs = Date.now() - inv.startTs
-    inv.confidence = inv.output.includes('[error]') ? 0.5 : 0.85
+    inv.confidence = inferConfidence(args.agentId, inv.output)
     inv.status = 'done'
     inv.endTs = Date.now()
     args.send({ type: 'agent_end', invocation: { ...inv } })
     return inv
+  } catch (err) {
+    inv.output = `${inv.output}\n[error] ${(err as Error).message}`.trim()
+    inv.completionTokens = estTokens(inv.output)
+    inv.durationMs = Date.now() - inv.startTs
+    inv.confidence = 0.4
+    inv.status = 'error'
+    inv.endTs = Date.now()
+    args.send({ type: 'agent_end', invocation: { ...inv } })
+    return inv
   }
+}
 
-  const maxTokens = Math.min(spec.maxTokens || 1024, args.subspace === 'titan' ? 4000 : 2000)
+function applyToolResult(inv: Invocation, tool: ToolOutput, send: (e: EngineEvent) => void) {
+  const text = tool.output || ''
+  if (text) {
+    inv.output += text
+    send({ type: 'agent_token', invocationId: inv.id, token: text })
+  }
+  inv.sources = tool.sources
+  inv.completionTokens = estTokens(inv.output)
+  inv.durationMs = Date.now() - inv.startTs
+  inv.confidence = tool.confidence ?? (tool.sources && tool.sources.length > 0 ? 0.85 : 0.7)
+  inv.status = 'done'
+  inv.endTs = Date.now()
+  send({ type: 'agent_end', invocation: { ...inv } })
+}
+
+async function runSearchAgent(args: RunAgentArgs): Promise<ToolOutput> {
+  const res = await search(args.task, 5, args.signal)
+  if (res.results.length === 0) {
+    return { output: 'No search results found for the query.\n', confidence: 0.5 }
+  }
+  const lines: string[] = ['Search results (DuckDuckGo):', '']
+  res.results.forEach((r, i) => {
+    lines.push(`${i + 1}. ${r.title}`)
+    lines.push(`${r.url}`)
+    if (r.snippet) lines.push(r.snippet)
+    lines.push('')
+  })
+  return {
+    output: lines.join('\n'),
+    sources: res.results.map(r => ({ title: r.title, url: r.url })),
+    confidence: 0.82,
+  }
+}
+
+async function runArxivAgent(args: RunAgentArgs): Promise<ToolOutput> {
+  const res = await queryArxiv(args.task, 3, args.signal)
+  if (res.entries.length === 0) {
+    return { output: 'No arXiv papers found for the query.\n', confidence: 0.5 }
+  }
+  const lines: string[] = ['arXiv results:', '']
+  res.entries.forEach((e, i) => {
+    lines.push(`${i + 1}. ${e.title}`)
+    lines.push(`${e.id}`)
+    if (e.updated) lines.push(`Updated: ${e.updated}`)
+    if (e.summary) lines.push(e.summary)
+    lines.push('')
+  })
+  return {
+    output: lines.join('\n'),
+    sources: res.entries.map(e => ({ title: e.title, url: e.id })),
+    confidence: 0.84,
+  }
+}
+
+async function runWolframAgent(args: RunAgentArgs): Promise<ToolOutput> {
+  const res = await queryWolfram(args.task, args.signal)
+  const lines = [
+    'Wolfram Alpha result:',
+    '',
+    `Input: ${args.task}`,
+    `Result: ${res.text}`,
+  ]
+  return {
+    output: lines.join('\n'),
+    sources: [{ title: 'Wolfram Alpha', url: res.sourceUrl }],
+    confidence: 0.9,
+  }
+}
+
+async function runPythonAgent(args: RunAgentArgs, inv: Invocation): Promise<ToolOutput> {
+  const { code, promptText } = await generateProgram('python', args)
+  inv.prompt = promptText
+  inv.promptTokens = estTokens(promptText)
+  const res = await runPython(code, 25000)
+  const lines = [
+    'Python execution (local):',
+    '',
+    '```python',
+    code,
+    '```',
+    '',
+    'stdout:',
+    res.stdout || '(empty)',
+    '',
+    'stderr:',
+    res.stderr || '(none)',
+    '',
+    `exit_code: ${res.exitCode ?? 'unknown'}`,
+  ]
+  const confidence = res.stderr ? 0.65 : 0.88
+  return { output: lines.join('\n'), confidence }
+}
+
+async function runDataAgent(args: RunAgentArgs, inv: Invocation): Promise<ToolOutput> {
+  const { code, promptText } = await generateProgram('data', args)
+  inv.prompt = promptText
+  inv.promptTokens = estTokens(promptText)
+  const res = await runPython(code, 25000)
+  const lines = [
+    'Data analysis (pandas/sqlite):',
+    '',
+    '```python',
+    code,
+    '```',
+    '',
+    'stdout:',
+    res.stdout || '(empty)',
+    '',
+    'stderr:',
+    res.stderr || '(none)',
+    '',
+    `exit_code: ${res.exitCode ?? 'unknown'}`,
+  ]
+  const confidence = res.stderr ? 0.6 : 0.86
+  return { output: lines.join('\n'), confidence }
+}
+
+async function generateProgram(kind: 'python' | 'data', args: RunAgentArgs): Promise<{ code: string; promptText: string }> {
+  const dataBlocks = extractDataBlocks(args.task)
+  const system = kind === 'python'
+    ? 'You are PythonAgent. Return ONLY valid Python code. Use print() for results. No markdown.'
+    : 'You are DataAgent. Return ONLY valid Python code using pandas/sqlite. Parse any provided data blocks. Use print() for results. No markdown.'
+  const user = `${buildUserPrompt(args.task, args.prior, 800)}\n\n${dataBlocks ? `# Data blocks\n${dataBlocks}` : ''}`
+  const promptText = `[system]\n${system}\n\n[user]\n${user}`
+  let raw = ''
   for await (const tok of streamCompletion({
     provider: args.provider,
     model: args.model,
     messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt },
+      { role: 'system', content: system },
+      { role: 'user', content: user },
     ],
-    maxTokens,
-    temperature: args.subspace === 'titan' ? 0.3 : 0.5,
+    maxTokens: kind === 'python' ? 900 : 1200,
+    temperature: 0.2,
     signal: args.signal,
   })) {
-    inv.output += tok
-    args.send({ type: 'agent_token', invocationId: inv.id, token: tok })
+    raw += tok
   }
+  const code = extractCode(raw)
+  return { code, promptText }
+}
 
-  inv.completionTokens = estTokens(inv.output)
-  inv.durationMs = Date.now() - inv.startTs
-  inv.confidence = inferConfidence(args.agentId, inv.output)
-  inv.status = 'done'
-  inv.endTs = Date.now()
-  args.send({ type: 'agent_end', invocation: { ...inv } })
-  return inv
+function extractCode(raw: string): string {
+  const fenced = /```(?:python)?\n([\s\S]*?)```/i.exec(raw)
+  if (fenced?.[1]) return fenced[1].trim()
+  return raw.trim()
+}
+
+function extractDataBlocks(task: string): string | null {
+  const blocks: string[] = []
+  const re = /```(csv|tsv|json)?\n([\s\S]*?)```/gi
+  for (const m of task.matchAll(re)) {
+    const label = m[1] ? m[1].toUpperCase() : 'DATA'
+    blocks.push(`[${label}]\n${m[2].trim()}`)
+  }
+  return blocks.length > 0 ? blocks.join('\n\n') : null
 }
 
 function touchEdge(state: TaskState, from: string, to: string, step: number, send: (e: EngineEvent) => void) {
@@ -235,10 +491,12 @@ function touchEdge(state: TaskState, from: string, to: string, step: number, sen
     existing.weight += 1
     existing.lastStep = step
     send({ type: 'edge', edge: { ...existing } })
+    void safeDb(() => upsertEdge(state.id, existing))
   } else {
     const e: Edge = { from, to, weight: 1, lastStep: step }
     state.edges.push(e)
     send({ type: 'edge', edge: { ...e } })
+    void safeDb(() => upsertEdge(state.id, e))
   }
 }
 
@@ -294,5 +552,6 @@ async function runBrowser(inv: Invocation, args: RunAgentArgs): Promise<void> {
     }
     emit(`## ${r.title || r.url}\n${r.url} — ${r.ms}ms\n\n${r.text || '(empty body)'}\n\n`)
   }
+  inv.sources = results.filter(r => !r.error).map(r => ({ title: r.title || r.url, url: r.url }))
   emit(`Confidence: ${results.every(r => !r.error) ? 'high' : 'medium'}`)
 }
