@@ -1,22 +1,13 @@
 'use client'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState } from 'react'
 
 export function Header() {
-  const [time, setTime] = useState('')
-  useEffect(() => {
-    const tick = () => setTime(fmtTime(new Date()))
-    tick()
-    const id = setInterval(tick, 1000)
-    return () => clearInterval(id)
-  }, [])
   return (
     <header className="sticky top-0 z-30 backdrop-blur bg-ink-950/85 border-b hairline">
       <div className="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
         <Link href="/" className="flex items-baseline gap-3 group">
           <span className="font-display text-[26px] leading-none text-bone-100">Puppeteer</span>
-          <span className="eyebrow hidden sm:inline">v1.0 · orchestration · 2026</span>
         </Link>
         <nav className="hidden md:flex items-center gap-7 text-[13px] text-bone-300/80">
           <NavItem to="/playground" label="Playground" />
@@ -25,7 +16,6 @@ export function Header() {
           <NavItem to="/docs" label="Docs" />
         </nav>
         <div className="flex items-center gap-3">
-          <span className="hidden md:inline eyebrow">{time || '--:--:--'} · UTC</span>
           <Link
             href="/playground"
             className="text-[12px] uppercase tracking-[0.22em] font-mono px-3 py-2 border hairline-strong text-bone-100 hover:bg-bone-100 hover:text-ink-950 transition-colors"
@@ -64,7 +54,7 @@ export function Footer() {
       </div>
       <div className="border-t hairline">
         <div className="max-w-[1400px] mx-auto px-6 py-4 flex flex-wrap gap-4 justify-between items-center text-[11px] uppercase tracking-[0.22em] font-mono text-bone-400">
-          <span>© 2026 Puppeteer Labs · Open source</span>
+          <span>© Puppeteer Labs · Open source</span>
           <span>Built on the Puppeteer paradigm · GSM-Hard 70.0% · MMLU-Pro 83.0%</span>
         </div>
       </div>
@@ -87,7 +77,3 @@ function Col({ title, links }: { title: string; links: [string, string][] }) {
   )
 }
 
-function fmtTime(d: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0')
-  return `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`
-}

@@ -23,11 +23,6 @@ function Hero() {
       <div className="grid-bg absolute inset-0 opacity-50" />
       <div className="absolute inset-0 noise" style={{ ['--grain-opacity' as never]: 0.06 } as React.CSSProperties} />
       <div className="relative max-w-[1400px] mx-auto px-6 pt-20 pb-28">
-        <div className="flex items-center gap-6 mb-12">
-          <span className="eyebrow">№ 001 · multi-agent orchestration</span>
-          <div className="flex-1 h-px hairline border-t" />
-          <span className="eyebrow">april 2026</span>
-        </div>
         <h1 className="font-display text-[clamp(56px,9vw,148px)] leading-[0.92] text-bone-100 text-balance">
           One model is no longer<br />
           <span className="serif-italic text-signal-amber">enough.</span>
@@ -106,10 +101,6 @@ function BenchmarkStrip() {
   return (
     <section className="border-b hairline">
       <div className="max-w-[1400px] mx-auto px-6 py-10">
-        <div className="flex items-baseline justify-between mb-6">
-          <span className="eyebrow">benchmarks · llama-3.1-405b base · 2026 paper figures</span>
-          <span className="eyebrow">paper-validated</span>
-        </div>
         <div className="grid grid-cols-2 md:grid-cols-5 divide-x hairline">
           {items.map(b => (
             <div key={b.k} className="px-4 py-2">
@@ -248,7 +239,7 @@ function ArchitectureSection() {
             ['Agent pool', 'Provider tools · isolated', 'Each agent isolated. 30s timeout.'],
             ['LLM router', 'OpenRouter + Groq', '100+ models · low-latency fast path.'],
             ['Task queue', 'Redis Streams (planned)', 'Async dispatch · pub-sub state bus.'],
-            ['Database', 'Postgres / Neon (planned)', 'Run history · trace replay.'],
+            ['Database', 'Postgres / Neon', 'Run history · trace replay.'],
             ['Observability', 'OpenTelemetry hooks', 'Per-agent token attribution.'],
           ].map(([title, tech, desc]) => (
             <div key={title} className="bg-ink-900 p-5">
