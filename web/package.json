@@ -11,6 +11,7 @@
   "dependencies": {
     "framer-motion": "^12.0.0",
     "next": "^15.1.0",
+    "pg": "^8.13.3",
     "playwright": "^1.59.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

@@ -13,6 +13,12 @@ npm run dev
 
 Open http://localhost:3000/playground and submit a task.
 
+If you want run history and replay, apply the database schema:
+
+```bash
+psql "$DATABASE_URL" -f db/schema.sql
+```
+
 ## Scripts
 
 | script | what |

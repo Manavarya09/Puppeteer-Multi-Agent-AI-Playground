@@ -35,6 +35,10 @@ npm run dev
 | `DEFAULT_MODEL` | optional | default `openai/gpt-4o-mini` |
 | `FAST_MODEL` | optional | Groq model for the fast path |
 | `NEXT_PUBLIC_SITE_URL` | optional | sent to OpenRouter as `HTTP-Referer` |
+| `TAVILY_API_KEY` | optional | real web search (BingAgent) |
+| `WOLFRAM_APP_ID` | optional | Wolfram Alpha tool |
+| `DATABASE_URL` | optional | Postgres/Neon run persistence |
+| `RATE_LIMIT_PER_MIN` | optional | best-effort API rate limit |
 
 ## What's real vs. stubbed
 
@@ -45,7 +49,7 @@ npm run dev
 | LLM calls per agent (OpenRouter / Groq) | ✅ real, streaming |
 | Reasoning agents (planner, critic, modifier, reflect, concluder) | ✅ real LLM |
 | BrowserAgent (Playwright headless chromium) | ✅ real — fetches URLs from task/prior context, extracts page text |
-| Other tool agents (python, wolfram, arxiv, bing, data) | ⚠️ simulated by the LLM with a clear "(simulated)" marker — real integrations are TODO |
+| Other tool agents (python, wolfram, arxiv, bing, data) | ✅ real integrations (local Python execution, Tavily search, arXiv API, Wolfram Alpha) |
 | RL-learned policy | ❌ heuristic only |
 | Auth, billing, persistence | ❌ none — local only |
 
@@ -56,4 +60,13 @@ npm run dev
 - Replace heuristic policy with a small learned policy trained on production traces
 - Auth via Clerk (free tier) once accounts are needed
 
+## Persistence setup (optional)
+
+If you want run history and replay, provision Postgres (Neon) and apply the schema:
+
+```bash
+psql "$DATABASE_URL" -f web/db/schema.sql
+```
+
+## Repository layout
 
