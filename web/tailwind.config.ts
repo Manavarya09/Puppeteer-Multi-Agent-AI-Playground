@@ -21,7 +21,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        display: ['"Instrument Serif"', 'ui-serif', 'Georgia', 'serif'],
+        display: ['"Space Grotesk"', '"Geist"', 'system-ui', 'sans-serif'],
         sans: ['"Geist"', '"Inter Tight"', 'system-ui', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
       },

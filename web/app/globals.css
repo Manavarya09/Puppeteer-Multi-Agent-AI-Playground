@@ -34,14 +34,19 @@ body {
 
 .eyebrow {
   font-family: 'JetBrains Mono', monospace;
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.22em;
   text-transform: uppercase;
   color: #8a8a92;
 }
 
-.serif { font-family: 'Instrument Serif', serif; }
-.serif-italic { font-family: 'Instrument Serif', serif; font-style: italic; }
+.serif { font-family: 'Space Grotesk', 'Geist', system-ui, sans-serif; }
+.serif-italic { font-family: 'Space Grotesk', 'Geist', system-ui, sans-serif; font-style: italic; }
+
+.text-\[10px\] { font-size: 12px; }
+.text-\[11px\] { font-size: 13px; }
+.text-\[12px\] { font-size: 14px; }
+.text-\[12\.5px\] { font-size: 14.5px; }
 
 @keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
 .marquee-track { animation: marquee 60s linear infinite; }
