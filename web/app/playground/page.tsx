@@ -7,7 +7,7 @@ import { Graph } from '@/components/Graph'
 
 const TEMPLATES: { label: string; task: string }[] = [
   { label: 'Hard math', task: 'Solve the system: 3x² − 5x + 2 = 0 and 2x + 4y = 11. Show every step and verify the result with a Python script.' },
-  { label: 'Market scan', task: 'Compare Stripe and Adyen on developer experience, pricing, and recent product launches in 2026. Include sources.' },
+  { label: 'Market scan', task: 'Compare Stripe and Adyen on developer experience, pricing, and recent product launches. Include sources.' },
   { label: 'Paper deep-dive', task: 'Find the latest arXiv work on RL-driven multi-agent orchestration and summarise the three most cited approaches.' },
   { label: 'Research memo', task: 'Write a 200-word memo on the unit economics of selling AI orchestration to enterprise customers, with a clear recommendation.' },
   { label: 'Code review', task: 'Refactor a brittle if/else cascade for billing tier resolution into a clean state machine. Verify behaviour with unit tests.' },
@@ -22,6 +22,16 @@ const emptyState = (task: string, subspace: Subspace, budget: number): TaskState
   totalTokens: 0, costUsd: 0, finalOutput: '', finalConfidence: 0,
 })
 
+type RunSummary = {
+  id: string
+  task: string
+  status: string
+  startedAt: string | null
+  completedAt: string | null
+  totalTokens: number
+  finalConfidence: number
+}
+
 export default function PlaygroundPage() {
   const [task, setTask] = useState(TEMPLATES[0].task)
   const [subspace, setSubspace] = useState<Subspace>('mimas')
@@ -32,6 +42,9 @@ export default function PlaygroundPage() {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<string | null>(null)
   const [showTrace, setShowTrace] = useState(true)
+  const [history, setHistory] = useState<RunSummary[]>([])
+  const [historyError, setHistoryError] = useState<string | null>(null)
+  const [historyLoading, setHistoryLoading] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
   const feedRef = useRef<HTMLDivElement | null>(null)
 
@@ -39,6 +52,48 @@ export default function PlaygroundPage() {
     if (!feedRef.current) return
     feedRef.current.scrollTop = feedRef.current.scrollHeight
   }, [state?.invocations.length, state?.invocations[state?.invocations.length - 1]?.output.length])
+
+  useEffect(() => {
+    refreshHistory()
+  }, [])
+
+  async function refreshHistory() {
+    setHistoryLoading(true)
+    setHistoryError(null)
+    try {
+      const res = await fetch('/api/runs?limit=20')
+      if (!res.ok) {
+        const txt = await res.text().catch(() => res.statusText)
+        throw new Error(parseApiError(txt) || res.statusText)
+      }
+      const json = await res.json() as { runs: RunSummary[] }
+      setHistory(json.runs || [])
+    } catch (err) {
+      setHistoryError((err as Error).message)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }
+
+  async function loadRun(id: string) {
+    setHistoryError(null)
+    try {
+      const res = await fetch(`/api/runs/${id}`)
+      if (!res.ok) {
+        const txt = await res.text().catch(() => res.statusText)
+        throw new Error(parseApiError(txt) || res.statusText)
+      }
+      const json = await res.json() as { run: TaskState }
+      const snap = json.run
+      setState(snap)
+      setTask(snap.task)
+      setSubspace(snap.subspace)
+      setBudget(snap.budget)
+      setSelected(null)
+    } catch (err) {
+      setHistoryError((err as Error).message)
+    }
+  }
 
   async function run() {
     setRunning(true)
@@ -98,6 +153,7 @@ export default function PlaygroundPage() {
       setRunning(false)
       setActiveId(null)
       abortRef.current = null
+      refreshHistory()
     }
   }
 
@@ -213,6 +269,32 @@ export default function PlaygroundPage() {
               <Stat label="Compaction" value={`${(compaction * 100).toFixed(0)}%`} />
               <Stat label="Cycles detected" value={cycles.length} accent={cycles.length > 0} />
               <Stat label="Confidence" value={`${Math.round((state?.finalConfidence ?? 0) * 100)}%`} />
+            </Panel>
+
+            <Panel title="Recent runs" idx="03B">
+              {historyLoading && <div className="text-[12px] text-bone-300/70">Loading…</div>}
+              {historyError && <div className="text-[12px] text-signal-rust">{historyError}</div>}
+              {!historyLoading && !historyError && history.length === 0 && (
+                <div className="text-[12px] text-bone-300/70">No runs saved yet.</div>
+              )}
+              <div className="space-y-2">
+                {history.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => loadRun(r.id)}
+                    className="w-full text-left border hairline p-2 hover:border-bone-300/40 transition-colors"
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="eyebrow">{r.status}</span>
+                      <span className="eyebrow">{fmtTs(r.startedAt)}</span>
+                    </div>
+                    <div className="text-[12px] text-bone-100 line-clamp-2 mt-1">{r.task}</div>
+                    <div className="text-[10px] text-bone-300/70 mt-1 font-mono">
+                      {r.totalTokens.toLocaleString()} tok · {Math.round(r.finalConfidence * 100)}%
+                    </div>
+                  </button>
+                ))}
+              </div>
             </Panel>
           </aside>
 
@@ -485,4 +567,21 @@ function TraceView({ inv }: { inv: Invocation }) {
 function fmtMs(ms: number) {
   if (ms < 1000) return `${ms}ms`
   return `${(ms / 1000).toFixed(2)}s`
+}
+
+function fmtTs(ts: string | null) {
+  if (!ts) return '--'
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return '--'
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')} UTC`
+}
+
+function parseApiError(text: string): string {
+  if (!text) return ''
+  try {
+    const json = JSON.parse(text) as { error?: string }
+    return json.error || text
+  } catch {
+    return text
+  }
 }
