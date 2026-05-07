@@ -451,18 +451,64 @@ async function runArxivAgent(args: RunAgentArgs): Promise<ToolOutput> {
 }
 
 async function runWolframAgent(args: RunAgentArgs): Promise<ToolOutput> {
-  const res = await queryWolfram(args.task, args.signal)
+  // Try the raw task as a math.js expression first ("2+2", "sqrt(144)").
+  let res: Awaited<ReturnType<typeof queryWolfram>> | null = null
+  let firstErr: unknown = null
+  try {
+    res = await queryWolfram(args.task, args.signal)
+  } catch (e) {
+    firstErr = e
+  }
+  // Natural-language fallback: ask the LLM to extract a math.js expression and retry.
+  if (!res) {
+    try {
+      const expr = await extractMathExpression(args)
+      if (expr) res = await queryWolfram(expr, args.signal)
+    } catch (e) {
+      firstErr = e
+    }
+  }
+  if (!res) {
+    const msg = firstErr instanceof Error ? firstErr.message : String(firstErr)
+    return {
+      output: `Math agent could not evaluate the expression.\nReason: ${msg}\n`,
+      sources: [],
+      confidence: 0.4,
+    }
+  }
   const lines = [
-    'Wolfram Alpha result:',
+    'Math evaluation (math.js):',
     '',
-    `Input: ${args.task}`,
+    `Expression: ${res.expression}`,
     `Result: ${res.text}`,
   ]
   return {
     output: lines.join('\n'),
-    sources: [{ title: 'Wolfram Alpha', url: res.sourceUrl }],
+    sources: [{ title: 'math.js', url: res.sourceUrl }],
     confidence: 0.9,
   }
+}
+
+async function extractMathExpression(args: RunAgentArgs): Promise<string | null> {
+  const system = 'You convert a natural-language math question into a single math.js expression. Output ONLY the expression on one line — no prose, no code fences, no equals sign, no units. Use math.js syntax: derivative("x^2","x"), simplify(...), integrate is not supported but definite results can be computed numerically. If the question is impossible to express in math.js, output exactly NONE.'
+  const user = `Question: ${args.task}\nExpression:`
+  let raw = ''
+  for await (const tok of streamCompletion({
+    provider: args.provider,
+    model: args.model,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+    maxTokens: 80,
+    temperature: 0,
+    signal: args.signal,
+  })) {
+    raw += tok
+  }
+  const expr = raw.trim().split('\n')[0].trim()
+  if (!expr || /^NONE$/i.test(expr)) return null
+  return expr
 }
 
 async function runPythonAgent(args: RunAgentArgs, inv: Invocation): Promise<ToolOutput> {

@@ -59,7 +59,7 @@ function SimulatedTerminal() {
     { t: '202 task_id=tsk_8af2e1', cls: 'text-signal-sage' },
     { t: '', cls: '' },
     { t: '> orchestrator.select() → PlannerAgent  prob=0.71', cls: 'text-signal-amber' },
-    { t: '> orchestrator.select() → BingAgent     prob=0.64', cls: 'text-signal-amber' },
+    { t: '> orchestrator.select() → DuckDuckGoAgent prob=0.64', cls: 'text-signal-amber' },
     { t: '> orchestrator.select() → CriticAgent   prob=0.58', cls: 'text-signal-amber' },
     { t: '> orchestrator.select() → ModifierAgent prob=0.52', cls: 'text-signal-amber' },
     { t: '> orchestrator.select() → ConcluderAgent prob=0.69', cls: 'text-signal-amber' },

@@ -1,23 +1,28 @@
+// Free math evaluator backed by math.js (https://api.mathjs.org/) — no API key required.
+// File kept as wolfram.ts to minimise ripple in the orchestrator.
+
 export interface WolframResponse {
   text: string
   sourceUrl: string
+  expression: string
 }
 
-const WOLFRAM_URL = 'https://api.wolframalpha.com/v1/result'
+const MATHJS_URL = 'https://api.mathjs.org/v4/'
 
 export async function queryWolfram(input: string, signal?: AbortSignal): Promise<WolframResponse> {
-  const appId = process.env.WOLFRAM_APP_ID
-  if (!appId) throw new Error('WOLFRAM_APP_ID not set')
-
-  const encoded = encodeURIComponent(input)
-  const res = await fetch(`${WOLFRAM_URL}?i=${encoded}&appid=${appId}`, { signal })
-  if (!res.ok) {
-    const txt = await res.text().catch(() => res.statusText)
-    throw new Error(`wolfram ${res.status}: ${txt.slice(0, 300)}`)
-  }
+  const expr = input.trim()
+  const res = await fetch(`${MATHJS_URL}?expr=${encodeURIComponent(expr)}`, { signal })
   const text = (await res.text()).trim()
+  if (!res.ok) {
+    throw new Error(`mathjs ${res.status}: ${text.slice(0, 300)}`)
+  }
+  // math.js returns plain text on success, or "Error: ..." text on a parse/eval failure.
+  if (/^Error[:\s]/i.test(text)) {
+    throw new Error(text.slice(0, 300))
+  }
   return {
     text: text || '(no result)',
-    sourceUrl: `https://www.wolframalpha.com/input?i=${encoded}`,
+    expression: expr,
+    sourceUrl: 'https://mathjs.org/',
   }
 }

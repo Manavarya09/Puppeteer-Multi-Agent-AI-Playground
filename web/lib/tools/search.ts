@@ -8,18 +8,21 @@ export interface SearchResponse {
   results: SearchResult[]
 }
 
-const DUCKDUCKGO_URL = 'https://duckduckgo.com/html/'
-const DEFAULT_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 PuppeteerPlayground/0.1'
+const DUCKDUCKGO_URL = 'https://html.duckduckgo.com/html/'
+const DEFAULT_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
 
 export async function search(query: string, maxResults = 5, signal?: AbortSignal): Promise<SearchResponse> {
   return searchDuckDuckGo(query, maxResults, signal)
 }
 
 async function searchDuckDuckGo(query: string, maxResults: number, signal?: AbortSignal): Promise<SearchResponse> {
-  const url = `${DUCKDUCKGO_URL}?q=${encodeURIComponent(query)}`
-  const res = await fetch(url, {
-    method: 'GET',
-    headers: { 'User-Agent': DEFAULT_UA },
+  const res = await fetch(DUCKDUCKGO_URL, {
+    method: 'POST',
+    headers: {
+      'User-Agent': DEFAULT_UA,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `q=${encodeURIComponent(query)}`,
     signal,
   })
   if (!res.ok) {
