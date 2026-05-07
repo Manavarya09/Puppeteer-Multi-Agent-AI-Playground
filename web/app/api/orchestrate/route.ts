@@ -6,7 +6,7 @@ import { extractUrls, fetchUrls } from '@/lib/tools/browser'
 import { queryArxiv } from '@/lib/tools/arxiv'
 import { search } from '@/lib/tools/search'
 import { searchHackerNews } from '@/lib/tools/hn'
-import { queryWolfram } from '@/lib/tools/wolfram'
+import { queryWolfram, sanitizeExpression } from '@/lib/tools/wolfram'
 import { runPython } from '@/lib/tools/python'
 import { createRun, dbEnabled, insertDecision, insertInvocation, upsertEdge, updateRunFinal } from '@/lib/db'
 import type { Edge, EngineEvent, Invocation, OrchestratorDecision, Subspace, TaskState } from '@/engine/types'
@@ -469,9 +469,15 @@ async function runWolframAgent(args: RunAgentArgs): Promise<ToolOutput> {
     }
   }
   if (!res) {
-    const msg = firstErr instanceof Error ? firstErr.message : String(firstErr)
+    const detail = firstErr instanceof Error ? firstErr.message : String(firstErr)
+    const friendly = detail.replace(/^mathjs \d+:\s*/i, '').replace(/^Error:\s*/i, '')
     return {
-      output: `Math agent could not evaluate the expression.\nReason: ${msg}\n`,
+      output: [
+        'Math agent could not evaluate this as a math expression.',
+        `Detail: ${friendly}`,
+        '',
+        'Tip: try a concrete expression like "2+2", "sqrt(144)", or `derivative("x^2","x")`.',
+      ].join('\n'),
       sources: [],
       confidence: 0.4,
     }
@@ -490,7 +496,21 @@ async function runWolframAgent(args: RunAgentArgs): Promise<ToolOutput> {
 }
 
 async function extractMathExpression(args: RunAgentArgs): Promise<string | null> {
-  const system = 'You convert a natural-language math question into a single math.js expression. Output ONLY the expression on one line — no prose, no code fences, no equals sign, no units. Use math.js syntax: derivative("x^2","x"), simplify(...), integrate is not supported but definite results can be computed numerically. If the question is impossible to express in math.js, output exactly NONE.'
+  const system = [
+    'Convert a natural-language math question into ONE math.js expression.',
+    'Rules:',
+    '- Output ONLY the expression on a single line. No prose, no code fences, no quotes around the whole expression, no labels like "Expression:", no trailing "=" or "?".',
+    '- Use math.js syntax. Examples:',
+    '  "what is 2 plus 2"           -> 2 + 2',
+    '  "square root of 144"         -> sqrt(144)',
+    '  "derivative of x squared"    -> derivative("x^2", "x")',
+    '  "simplify 2x + 3x"           -> simplify("2*x + 3*x")',
+    '  "solve 2x + 3 = 11"          -> solve(2*x + 3 - 11, x)',
+    '  "5 factorial"                -> 5!',
+    '  "sin of pi over 2"           -> sin(pi/2)',
+    '- math.js does NOT support symbolic integration. If asked for an indefinite integral, output NONE.',
+    '- If the question cannot be expressed as a math.js expression, output exactly: NONE',
+  ].join('\n')
   const user = `Question: ${args.task}\nExpression:`
   let raw = ''
   for await (const tok of streamCompletion({
@@ -506,7 +526,7 @@ async function extractMathExpression(args: RunAgentArgs): Promise<string | null>
   })) {
     raw += tok
   }
-  const expr = raw.trim().split('\n')[0].trim()
+  const expr = sanitizeExpression(raw)
   if (!expr || /^NONE$/i.test(expr)) return null
   return expr
 }
