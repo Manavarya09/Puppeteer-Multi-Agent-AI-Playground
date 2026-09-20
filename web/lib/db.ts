@@ -29,12 +29,12 @@ export function dbEnabled(): boolean {
 function resolveDbPath(): string {
   const configured = process.env.LOCAL_DB_PATH || process.env.DB_PATH || DEFAULT_DB_PATH
   if (path.isAbsolute(configured)) return configured
-  return path.resolve(process.cwd(), configured)
+  return path.resolve(/* turbopackIgnore: true */ process.cwd(), configured)
 }
 
 function ensureSchema(dbInstance: import('better-sqlite3').Database): void {
   if (schemaApplied) return
-  const schemaPath = path.resolve(process.cwd(), 'db/schema.sql')
+  const schemaPath = path.resolve(/* turbopackIgnore: true */ process.cwd(), 'db/schema.sql')
   if (!fs.existsSync(schemaPath)) return
   const schema = fs.readFileSync(schemaPath, 'utf8')
   dbInstance.exec(schema)
