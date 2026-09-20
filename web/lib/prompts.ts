@@ -160,6 +160,20 @@ export function buildUserPrompt(task: string, prior: Invocation[], maxPriorChars
       lines.push(`\n## [${spec?.short ?? p.agentId}] ${spec?.name ?? p.agentId}`)
       lines.push(out)
     }
+    // Add math feedback summary if available (for concluder)
+    const mathOutputs = prior.filter(p => p.agentId === 'wolfram' && p.status === 'done')
+    if (mathOutputs.length > 0) {
+      lines.push('')
+      lines.push(`# Math Verification Summary`)
+      for (const m of mathOutputs) {
+        const exprMatch = /Expression:\s*(.+)/i.exec(m.output)
+        const resultMatch = /Result:\s*(.+)/i.exec(m.output)
+        const confMatch = /Confidence:\s*(high|medium|low)/i.exec(m.output)
+        if (exprMatch && resultMatch) {
+          lines.push(`- ${exprMatch[1]} = ${resultMatch[1]} (confidence: ${confMatch?.[1] ?? 'unknown'})`)
+        }
+      }
+    }
   }
   lines.push('')
   lines.push(`# Your turn`)
