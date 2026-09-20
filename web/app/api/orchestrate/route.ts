@@ -676,6 +676,15 @@ function inferConfidence(agentId: string, output: string): number {
     if (/overall:\s*revise/i.test(output)) return 0.7
     if (/overall:\s*block/i.test(output)) return 0.45
   }
+  // Enhanced math confidence based on verification evidence (BATON-inspired)
+  if (agentId === 'wolfram') {
+    if (output.includes('Verification: estimation check passed')) return 0.95
+    if (output.includes('Verification: cross-verified')) return 0.92
+    if (output.includes('Confidence: high')) return 0.9
+    if (output.includes('Verification:')) return 0.75
+    if (output.includes('symbolic result')) return 0.7
+    return 0.72
+  }
   const base: Record<string, number> = {
     planner: 0.78, critic: 0.7, modifier: 0.85, concluder: 0.82, reflect: 0.76, coder: 0.84, verifier: 0.85,
     bing: 0.7, hn: 0.7, arxiv: 0.78, python: 0.86, browser: 0.72, data: 0.8, wolfram: 0.92,
