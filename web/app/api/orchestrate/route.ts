@@ -96,6 +96,7 @@ export async function POST(req: Request) {
         totalTokens: 0, costUsd: 0,
         finalOutput: '', finalConfidence: 0,
         startedAt: Date.now(),
+        mathFeedbackHistory: [],
       }
       send({ type: 'state', state: snapshot(state) })
       await safeDb(() => createRun(state))
@@ -131,6 +132,18 @@ export async function POST(req: Request) {
           state.invocations.push(inv)
           state.totalTokens += inv.promptTokens + inv.completionTokens
           void safeDb(() => insertInvocation(state.id, inv))
+
+          // Track math feedback history for iterative improvement (iGRPO-inspired)
+          if (inv.agentId === 'wolfram' && inv.status === 'done') {
+            const mathFeedback = parseMathFeedback(inv.output)
+            if (mathFeedback && state.mathFeedbackHistory) {
+              state.mathFeedbackHistory.push({
+                step,
+                ...mathFeedback,
+                timestamp: Date.now(),
+              })
+            }
+          }
 
           const prev = state.invocations[state.invocations.length - 2]
           if (prev) touchEdge(state, prev.agentId, inv.agentId, step, send)
@@ -704,6 +717,25 @@ function snapshot(s: TaskState): TaskState {
 
 function clamp(n: number, lo: number, hi: number) { return Math.max(lo, Math.min(hi, n)) }
 function rid() { return Math.random().toString(36).slice(2, 10) }
+
+// Parse structured math feedback from agent output (BATON-inspired)
+function parseMathFeedback(output: string): { expression: string; result: string; verification: string; confidence: 'high' | 'medium' | 'low'; confidenceReason: string } | null {
+  const exprMatch = /Expression:\s*(.+)/i.exec(output)
+  const resultMatch = /Result:\s*(.+)/i.exec(output)
+  const verMatch = /Verification:\s*(.+)/i.exec(output)
+  const confMatch = /Confidence:\s*(high|medium|low)/i.exec(output)
+  const reasonMatch = /Confidence:\s*(?:high|medium|low)\s*·\s*(.+)/i.exec(output)
+
+  if (!exprMatch || !resultMatch) return null
+
+  return {
+    expression: exprMatch[1].trim(),
+    result: resultMatch[1].trim(),
+    verification: verMatch?.[1]?.trim() ?? 'none',
+    confidence: (confMatch?.[1]?.toLowerCase() as 'high' | 'medium' | 'low') ?? 'medium',
+    confidenceReason: reasonMatch?.[1]?.trim() ?? 'parsed from output',
+  }
+}
 
 // Real Playwright fetch. Pulls URLs from the task + prior agent outputs, opens
 // each in a headless chromium, extracts visible text, and streams the result

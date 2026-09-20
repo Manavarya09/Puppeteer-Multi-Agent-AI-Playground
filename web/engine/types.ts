@@ -59,6 +59,8 @@ export interface TaskState {
   finalConfidence: number
   startedAt?: number
   completedAt?: number
+  // Math feedback history for iterative improvement (iGRPO-inspired)
+  mathFeedbackHistory?: MathFeedbackEntry[]
 }
 
 export type EngineEvent =
@@ -69,3 +71,14 @@ export type EngineEvent =
   | { type: 'decision'; decision: OrchestratorDecision }
   | { type: 'edge'; edge: Edge }
   | { type: 'complete'; state: TaskState }
+
+// Math feedback entry for tracking iterative improvement (iGRPO-inspired)
+export interface MathFeedbackEntry {
+  step: number
+  expression: string
+  result: string
+  verification: string
+  confidence: 'high' | 'medium' | 'low'
+  confidenceReason: string
+  timestamp: number
+}
