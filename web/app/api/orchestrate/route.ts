@@ -468,6 +468,21 @@ async function runWolframAgent(args: RunAgentArgs): Promise<ToolOutput> {
       firstErr = e
     }
   }
+  // Second fallback: try simplifying the task description
+  if (!res) {
+    try {
+      const simplified = args.task
+        .replace(/^(find|compute|calculate|evaluate|solve|determine|what is|what's)\s+/i, '')
+        .replace(/\?/g, '')
+        .trim()
+      if (simplified !== args.task) {
+        const expr2 = await extractMathExpression({ ...args, task: simplified })
+        if (expr2) res = await queryWolfram(expr2, args.signal)
+      }
+    } catch (e) {
+      firstErr = e
+    }
+  }
   if (!res) {
     const detail = firstErr instanceof Error ? firstErr.message : String(firstErr)
     const friendly = detail.replace(/^mathjs \d+:\s*/i, '').replace(/^Error:\s*/i, '')
@@ -515,8 +530,16 @@ async function extractMathExpression(args: RunAgentArgs): Promise<string | null>
     '  "solve 2x + 3 = 11"          -> solve(2*x + 3 - 11, x)',
     '  "5 factorial"                -> 5!',
     '  "sin of pi over 2"           -> sin(pi/2)',
+    '  "integral of x^2 from 0 to 1" -> integrate(x^2, x)',
+    '  "matrix [[1,2],[3,4]] det"   -> det([[1,2],[3,4]])',
+    '  "100 choose 3"               -> combinations(100, 3)',
     '- math.js does NOT support symbolic integration. If asked for an indefinite integral, output NONE.',
     '- If the question cannot be expressed as a math.js expression, output exactly: NONE',
+    '- Multi-step problems: output the FINAL expression only, not intermediate steps.',
+    '- Common mistakes to avoid:',
+    '  * "x squared" = x^2, not x*2',
+    '  * "percent" means /100',
+    '  * "of" in probability means multiplication',
   ].join('\n')
   const user = `Question: ${args.task}\nExpression:`
   let raw = ''
