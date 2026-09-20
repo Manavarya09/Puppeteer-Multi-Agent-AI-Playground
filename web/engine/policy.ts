@@ -3,7 +3,7 @@ import type { AgentSpec } from './agents'
 import type { CandidateScore, Invocation, TaskFeatures } from './types'
 
 const KEYWORDS: Record<keyof Omit<TaskFeatures, 'complexity'>, RegExp[]> = {
-  math: [/\bmath/i, /equation/i, /solve/i, /integral/i, /derivative/i, /prime/i, /factor/i, /algebra/i, /probability/i, /\b\d+\s*[+\-*/^]\s*\d+/, /\bgsm/i, /calculate/i, /compute/i, /matrix/i, /eigen/i],
+  math: [/\bmath/i, /equation/i, /solve/i, /integral/i, /derivative/i, /prime/i, /factor/i, /algebra/i, /probability/i, /\b\d+\s*[+\-*/^]\s*\d+/, /\bgsm/i, /calculate/i, /compute/i, /matrix/i, /eigen/i, /polynomial/i, /limit/i, /series/i, /converge/i, /diverge/i, /sum\b/i, /product\b/i, /gcd/i, /lcm/i, /modular/i, /diophantine/i, /inequality/i, /proof/i, /theorem/i, /lemma/i, /axiom/i, /topology/i, /graph theory/i, /combinat/i, /permut/i, /binomial/i, /probability/i, /statistic/i, /mean/i, /variance/i, /std/i, /distribution/i],
   web: [/web/i, /search/i, /look ?up/i, /current/i, /latest/i, /news/i, /recent/i, /today/i, /price/i, /url/i, /http/i, /\.com\b/i, /trending/i, /launch/i, /released?/i],
   code: [/python/i, /javascript|typescript|tsx?\b/i, /script/i, /\bcode\b/i, /function/i, /algorithm/i, /implement/i, /debug/i, /unit test/i, /regex/i, /refactor/i, /api\b/i, /class\b/i, /component/i],
   research: [/paper/i, /arxiv/i, /citation/i, /literature/i, /benchmark/i, /survey/i, /study/i, /research/i, /report/i, /analysis/i, /state[- ]of[- ]the[- ]art|sota/i],
@@ -166,3 +166,66 @@ function describeRationale(a: AgentSpec, margin: number): string {
 }
 
 export function policyTemperature(): number { return 0.65 }
+
+// Feedback Attribution: tracks how much each feedback step contributed
+// to the math agent's decision (inspired by BATON arXiv:2609.19830)
+export interface FeedbackAttribution {
+  agentId: string
+  step: number
+  attributionScore: number
+  reason: string
+}
+
+export function computeFeedbackAttribution(
+  invocations: Invocation[],
+  step: number
+): FeedbackAttribution[] {
+  const attributions: FeedbackAttribution[] = []
+  
+  for (let i = 0; i < invocations.length; i++) {
+    const inv = invocations[i]
+    let score = 0
+    let reason = ''
+    
+    // Math agent gets higher attribution when it provides verification
+    if (inv.agentId === 'wolfram') {
+      if (inv.output.includes('Verification:')) {
+        score += 0.3
+        reason = 'provided cross-verification'
+      }
+      if (inv.output.includes('Confidence: high')) {
+        score += 0.2
+        reason += ', high confidence result'
+      }
+    }
+    
+    // Critic gets attribution for catching errors
+    if (inv.agentId === 'critic') {
+      if (inv.output.toLowerCase().includes('error') || inv.output.toLowerCase().includes('incorrect')) {
+        score += 0.4
+        reason = 'identified errors in prior output'
+      }
+    }
+    
+    // Modifier gets attribution for corrections
+    if (inv.agentId === 'modifier') {
+      score += 0.25
+      reason = 'applied corrections based on feedback'
+    }
+    
+    // Recency decay: earlier steps get less attribution
+    const recencyFactor = 1 - (step - inv.step) * 0.1
+    score *= Math.max(0.3, recencyFactor)
+    
+    if (score > 0) {
+      attributions.push({
+        agentId: inv.agentId,
+        step: inv.step,
+        attributionScore: score,
+        reason: reason.trim() || `${inv.agentId} contributed to trajectory`,
+      })
+    }
+  }
+  
+  return attributions.sort((a, b) => b.attributionScore - a.attributionScore)
+}
