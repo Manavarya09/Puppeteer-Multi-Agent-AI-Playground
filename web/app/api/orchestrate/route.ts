@@ -482,16 +482,23 @@ async function runWolframAgent(args: RunAgentArgs): Promise<ToolOutput> {
       confidence: 0.4,
     }
   }
+  // Structured output with verification feedback (BATON-inspired attribution)
   const lines = [
     'Math evaluation (math.js):',
     '',
     `Expression: ${res.expression}`,
     `Result: ${res.text}`,
   ]
+  if (res.verification) {
+    lines.push(`Verification: ${res.verification}`)
+  }
+  if (res.confidence) {
+    lines.push(`Confidence: ${res.confidence}${res.confidenceReason ? ` · ${res.confidenceReason}` : ''}`)
+  }
   return {
     output: lines.join('\n'),
     sources: [{ title: 'math.js', url: res.sourceUrl }],
-    confidence: 0.9,
+    confidence: res.confidence === 'high' ? 0.92 : res.confidence === 'low' ? 0.5 : 0.75,
   }
 }
 

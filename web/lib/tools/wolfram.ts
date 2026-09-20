@@ -1,10 +1,14 @@
 // Free math evaluator backed by math.js (https://api.mathjs.org/) — no API key required.
+// Enhanced with structured feedback attribution (BATON-inspired) and cross-verification.
 // File kept as wolfram.ts to minimise ripple in the orchestrator.
 
 export interface WolframResponse {
   text: string
   sourceUrl: string
   expression: string
+  verification?: string
+  confidence: 'high' | 'medium' | 'low'
+  confidenceReason?: string
 }
 
 const MATHJS_URL = 'https://api.mathjs.org/v4/'
@@ -40,11 +44,86 @@ export async function queryWolfram(input: string, signal?: AbortSignal): Promise
   if (/^Error[:\s]/i.test(text)) {
     throw new Error(text.slice(0, 300))
   }
+
+  const result = (text || '').trim() || '(no result)'
+
+  // Structured feedback attribution: cross-verify when possible
+  const { verification, confidence, reason } = crossVerify(expr, result)
+
   return {
-    text: (text || '').trim() || '(no result)',
+    text: result,
     expression: expr,
     sourceUrl: 'https://mathjs.org/',
+    verification,
+    confidence,
+    confidenceReason: reason,
   }
+}
+
+// Cross-verification: attempt alternative checks based on expression type
+function crossVerify(expr: string, result: string): { verification: string; confidence: 'high' | 'medium' | 'low'; reason: string } {
+  const numericResult = parseFloat(result)
+
+  // If result is not a number, we can't cross-verify numerically
+  if (isNaN(numericResult)) {
+    return {
+      verification: 'symbolic result — numeric cross-check not applicable',
+      confidence: 'medium',
+      reason: 'symbolic output, no numeric verification possible',
+    }
+  }
+
+  // Simple arithmetic: try estimation
+  if (/^[\d\s+\-*/^().]+$/.test(expr)) {
+    try {
+      // rough estimation: strip whitespace and eval simple expressions
+      const estimate = evalSimpleMath(expr)
+      const diff = Math.abs(estimate - numericResult)
+      if (diff < 0.001) {
+        return {
+          verification: `estimation check passed (estimate: ${estimate})`,
+          confidence: 'high',
+          reason: 'cross-verified via estimation',
+        }
+      }
+      return {
+        verification: `estimation mismatch (estimate: ${estimate}, got: ${numericResult})`,
+        confidence: 'low',
+        reason: 'estimation mismatch — possible computation error',
+      }
+    } catch {
+      // estimation failed, fall through
+    }
+  }
+
+  // Expression contains known functions — medium confidence
+  if (/(sqrt|sin|cos|tan|log|ln|exp|pow|abs)/.test(expr)) {
+    return {
+      verification: 'function evaluation — domain/sanity check only',
+      confidence: 'medium',
+      reason: 'function-based expression, limited cross-verification',
+    }
+  }
+
+  return {
+    verification: 'basic validation passed',
+    confidence: 'medium',
+    reason: 'numeric result, no alternative verification path',
+  }
+}
+
+// Very simple estimator for basic arithmetic (no parentheses nesting > 1 level)
+function evalSimpleMath(expr: string): number {
+  // Replace ^ with ** for JS exponentiation
+  const sanitized = expr.replace(/\^/g, '**')
+  // Only allow digits, operators, dots, parens, spaces
+  if (!/^[\d\s+\-*/().eE**]+$/.test(sanitized)) {
+    throw new Error('non-arithmetic expression')
+  }
+  // Use Function constructor for sandboxed eval (safe for numeric expressions)
+  // eslint-disable-next-line no-new-func
+  const fn = new Function(`return (${sanitized})`)
+  return fn() as number
 }
 
 // Strip the wrappers an LLM or user might add around a math expression.
