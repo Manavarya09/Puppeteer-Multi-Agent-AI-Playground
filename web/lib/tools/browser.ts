@@ -1,15 +1,5 @@
-import { chromium, type Browser } from 'playwright'
-
-// Singleton browser reused across requests. Cold start ~500ms; subsequent
-// fetches reuse the same chromium process.
-let browserPromise: Promise<Browser> | null = null
-
-function getBrowser(): Promise<Browser> {
-  if (!browserPromise) {
-    browserPromise = chromium.launch({ headless: true })
-  }
-  return browserPromise
-}
+// Playwright browser tool — dynamically imported to avoid native module issues on Vercel.
+// Falls back to a fetch-based approach when Playwright is unavailable.
 
 export interface FetchResult {
   url: string
@@ -24,61 +14,79 @@ const MAX_TEXT_CHARS = 4000
 
 export async function fetchUrls(urls: string[], signal?: AbortSignal): Promise<FetchResult[]> {
   if (urls.length === 0) return []
-  const browser = await getBrowser()
-  const ctx = await browser.newContext({
-    userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 PuppeteerPlayground/0.1',
-    viewport: { width: 1280, height: 800 },
-  })
+
+  // Try Playwright first
   try {
-    return await Promise.all(urls.map(u => fetchOne(ctx, u, signal)))
-  } finally {
-    await ctx.close().catch(() => {})
+    const { chromium } = await import('playwright')
+    return await fetchWithPlaywright(urls, chromium, signal)
+  } catch {
+    // Playwright unavailable (Vercel serverless) — fall back to HTTP fetch
+    return await fetchWithHttp(urls, signal)
   }
 }
 
-async function fetchOne(
-  ctx: Awaited<ReturnType<Browser['newContext']>>,
-  url: string,
+async function fetchWithPlaywright(
+  urls: string[],
+  chromium: typeof import('playwright').chromium,
   signal?: AbortSignal,
-): Promise<FetchResult> {
-  const start = Date.now()
-  const page = await ctx.newPage()
-  const onAbort = () => page.close().catch(() => {})
-  signal?.addEventListener('abort', onAbort, { once: true })
+): Promise<FetchResult[]> {
+  const browser = await chromium.launch({ headless: true })
+  const results: FetchResult[] = []
   try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: DEFAULT_TIMEOUT_MS })
-    const title = await page.title().catch(() => undefined)
-    const text = await page.evaluate(() => {
-      const body = document.body
-      if (!body) return ''
-      return (body.innerText || '').replace(/\s+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim()
+    const ctx = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 PuppeteerPlayground/0.1',
+      viewport: { width: 1280, height: 800 },
     })
-    return {
-      url,
-      title,
-      text: text.slice(0, MAX_TEXT_CHARS),
-      ms: Date.now() - start,
+    for (const url of urls) {
+      const start = Date.now()
+      try {
+        const page = await ctx.newPage()
+        await page.goto(url, { timeout: DEFAULT_TIMEOUT_MS, waitUntil: 'domcontentloaded' })
+        const title = await page.title()
+        const text = await page.evaluate(() => document.body?.innerText ?? '')
+        await page.close()
+        results.push({ url, title, text: text.slice(0, MAX_TEXT_CHARS), ms: Date.now() - start })
+      } catch (err) {
+        results.push({ url, error: (err as Error).message.slice(0, 200), ms: Date.now() - start })
+      }
     }
-  } catch (err) {
-    return { url, error: (err as Error).message.slice(0, 200), ms: Date.now() - start }
+    await ctx.close()
   } finally {
-    signal?.removeEventListener('abort', onAbort)
-    await page.close().catch(() => {})
+    await browser.close()
   }
+  return results
 }
 
-const URL_RE = /https?:\/\/[^\s)>\]"'`]+/gi
+async function fetchWithHttp(urls: string[], signal?: AbortSignal): Promise<FetchResult[]> {
+  const results: FetchResult[] = []
+  for (const url of urls) {
+    const start = Date.now()
+    try {
+      const res = await fetch(url, {
+        signal,
+        headers: { 'User-Agent': 'PuppeteerPlayground/0.1 (HTTP fallback)' },
+      })
+      const html = await res.text()
+      // Basic HTML to text: strip tags
+      const text = html
+        .replace(/<script[\s\S]*?<\/script>/gi, '')
+        .replace(/<style[\s\S]*?<\/style>/gi, '')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, MAX_TEXT_CHARS)
+      // Extract title from HTML
+      const titleMatch = /<title[^>]*>([^<]+)<\/title>/i.exec(html)
+      results.push({ url, title: titleMatch?.[1]?.trim(), text, ms: Date.now() - start })
+    } catch (err) {
+      results.push({ url, error: (err as Error).message.slice(0, 200), ms: Date.now() - start })
+    }
+  }
+  return results
+}
 
 export function extractUrls(text: string, max = 3): string[] {
-  const out: string[] = []
-  const seen = new Set<string>()
-  for (const m of text.matchAll(URL_RE)) {
-    const u = m[0].replace(/[.,;:!?)\]]+$/, '')
-    if (u.includes('example.com')) continue
-    if (seen.has(u)) continue
-    seen.add(u)
-    out.push(u)
-    if (out.length >= max) break
-  }
-  return out
+  const urlPattern = /https?:\/\/[^\s)<>"]+/g
+  const matches = text.match(urlPattern) ?? []
+  return [...new Set(matches)].slice(0, max)
 }

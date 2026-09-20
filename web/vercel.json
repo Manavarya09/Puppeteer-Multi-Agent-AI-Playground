@@ -1,0 +1,17 @@
+{
+  "buildCommand": "next build",
+  "outputDirectory": ".next",
+  "framework": "nextjs",
+  "installCommand": "npm install --ignore-scripts",
+  "env": {
+    "DB_DISABLED": "1"
+  },
+  "functions": {
+    "app/api/orchestrate/route.ts": {
+      "maxDuration": 300
+    },
+    "app/api/runs/**/*.ts": {
+      "maxDuration": 30
+    }
+  }
+}

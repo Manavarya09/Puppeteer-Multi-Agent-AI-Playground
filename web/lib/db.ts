@@ -1,12 +1,26 @@
 import fs from 'fs'
 import path from 'path'
-import Database from 'better-sqlite3'
-import type { Database as DatabaseType } from 'better-sqlite3'
 import type { Edge, Invocation, OrchestratorDecision, TaskState } from '@/engine/types'
 
-let db: DatabaseType | null = null
+// Dynamic import for better-sqlite3 — avoids native module issues on Vercel
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Database: any = null
+let db: import('better-sqlite3').Database | null = null
 let schemaApplied = false
 const DEFAULT_DB_PATH = './db/local.sqlite'
+
+async function loadDatabase() {
+  if (!Database) {
+    try {
+      const mod = await import('better-sqlite3')
+      Database = mod.default ?? mod
+    } catch {
+      // better-sqlite3 unavailable (e.g. Vercel serverless)
+      return null
+    }
+  }
+  return Database
+}
 
 export function dbEnabled(): boolean {
   return process.env.DB_DISABLED !== '1'
@@ -18,23 +32,31 @@ function resolveDbPath(): string {
   return path.resolve(process.cwd(), configured)
 }
 
-function ensureSchema(dbInstance: DatabaseType): void {
+function ensureSchema(dbInstance: import('better-sqlite3').Database): void {
   if (schemaApplied) return
   const schemaPath = path.resolve(process.cwd(), 'db/schema.sql')
+  if (!fs.existsSync(schemaPath)) return
   const schema = fs.readFileSync(schemaPath, 'utf8')
   dbInstance.exec(schema)
   schemaApplied = true
 }
 
-function getDb(): DatabaseType {
-  if (!db) {
+async function getDb(): Promise<import('better-sqlite3').Database | null> {
+  if (db) return db
+  const DbModule = await loadDatabase()
+  if (!DbModule) return null
+  try {
     const filePath = resolveDbPath()
-    fs.mkdirSync(path.dirname(filePath), { recursive: true })
-    db = new Database(filePath)
-    db.pragma('journal_mode = WAL')
+    const dir = path.dirname(filePath)
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true })
+    const instance = new DbModule(filePath)
+    instance.pragma('journal_mode = WAL')
+    ensureSchema(instance)
+    db = instance
+    return db
+  } catch {
+    return null
   }
-  ensureSchema(db)
-  return db
 }
 
 function toMs(ms?: number): number | null {
@@ -43,8 +65,9 @@ function toMs(ms?: number): number | null {
 }
 
 export async function createRun(state: TaskState): Promise<void> {
-  const db = getDb()
-  db.prepare(
+  const dbInstance = await getDb()
+  if (!dbInstance) return
+  dbInstance.prepare(
     `insert into runs (id, task, subspace, budget, status, total_tokens, cost_usd, final_output, final_confidence, started_at)
      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
@@ -62,8 +85,9 @@ export async function createRun(state: TaskState): Promise<void> {
 }
 
 export async function updateRunFinal(state: TaskState): Promise<void> {
-  const db = getDb()
-  db.prepare(
+  const dbInstance = await getDb()
+  if (!dbInstance) return
+  dbInstance.prepare(
     `update runs set status=?, total_tokens=?, cost_usd=?, final_output=?, final_confidence=?, completed_at=?, snapshot=?
      where id=?`
   ).run(
@@ -79,8 +103,9 @@ export async function updateRunFinal(state: TaskState): Promise<void> {
 }
 
 export async function insertInvocation(runId: string, inv: Invocation): Promise<void> {
-  const db = getDb()
-  db.prepare(
+  const dbInstance = await getDb()
+  if (!dbInstance) return
+  dbInstance.prepare(
     `insert into invocations (id, run_id, step, agent_id, prompt, output, status, prompt_tokens, completion_tokens, duration_ms, confidence, start_ts, end_ts, sources)
      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      on conflict (id) do update set output=excluded.output, status=excluded.status, completion_tokens=excluded.completion_tokens, duration_ms=excluded.duration_ms, confidence=excluded.confidence, end_ts=excluded.end_ts, sources=excluded.sources`
@@ -103,8 +128,9 @@ export async function insertInvocation(runId: string, inv: Invocation): Promise<
 }
 
 export async function insertDecision(runId: string, decision: OrchestratorDecision): Promise<void> {
-  const db = getDb()
-  db.prepare(
+  const dbInstance = await getDb()
+  if (!dbInstance) return
+  dbInstance.prepare(
     `insert into decisions (run_id, step, selected, rationale, candidates, decided_at)
      values (?, ?, ?, ?, ?, ?)`
   ).run(
@@ -118,8 +144,9 @@ export async function insertDecision(runId: string, decision: OrchestratorDecisi
 }
 
 export async function upsertEdge(runId: string, edge: Edge): Promise<void> {
-  const db = getDb()
-  db.prepare(
+  const dbInstance = await getDb()
+  if (!dbInstance) return
+  dbInstance.prepare(
     `insert into edges (run_id, from_agent, to_agent, weight, last_step)
      values (?, ?, ?, ?, ?)
      on conflict (run_id, from_agent, to_agent) do update set weight=excluded.weight, last_step=excluded.last_step`
@@ -127,8 +154,9 @@ export async function upsertEdge(runId: string, edge: Edge): Promise<void> {
 }
 
 export async function listRuns(limit = 20): Promise<Array<{ id: string; task: string; status: string; startedAt: string | null; completedAt: string | null; totalTokens: number; finalConfidence: number }>> {
-  const db = getDb()
-  const rows = db.prepare(
+  const dbInstance = await getDb()
+  if (!dbInstance) return []
+  const rows = dbInstance.prepare(
     `select id, task, status, started_at, completed_at, total_tokens, final_confidence
      from runs
      order by started_at desc
@@ -146,8 +174,9 @@ export async function listRuns(limit = 20): Promise<Array<{ id: string; task: st
 }
 
 export async function getRunSnapshot(runId: string): Promise<TaskState | null> {
-  const db = getDb()
-  const row = db.prepare('select snapshot from runs where id=?').get(runId) as { snapshot?: string } | undefined
+  const dbInstance = await getDb()
+  if (!dbInstance) return null
+  const row = dbInstance.prepare('select snapshot from runs where id=?').get(runId) as { snapshot?: string } | undefined
   if (!row?.snapshot) return null
   return JSON.parse(row.snapshot) as TaskState
 }
